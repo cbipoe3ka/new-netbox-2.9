@@ -13,7 +13,6 @@ from copy import deepcopy
 import datetime
 
 
-
 from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import FieldDoesNotExist, ValidationError
 from django.db import transaction, IntegrityError
@@ -59,6 +58,71 @@ from utilities.views import GetReturnURLMixin
 # Create your views here.
 
 
+class PaymentDeleteView(GetReturnURLMixin, View):
+    """
+    Delete a single object.
+
+    model: The model of the object being deleted
+    template_name: The name of the template
+    """
+    model = None
+    template_name = 'utilities/obj_delete.html'
+
+    def get_object(self, kwargs):
+        # Look up object by slug if one has been provided. Otherwise, use PK.
+        if 'slug' in kwargs:
+            return get_object_or_404(self.model, slug=kwargs['slug'])
+        else:
+            return get_object_or_404(self.model, pk=kwargs['pk'])
+
+    def get(self, request, **kwargs):
+        obj = self.get_object(kwargs)
+        form = ConfirmationForm(initial=request.GET)
+
+        return render(request, self.template_name, {
+            'obj': obj,
+            'form': form,
+            'obj_type': self.model._meta.verbose_name,
+            'return_url': self.get_return_url(request, obj),
+        })
+
+    def post(self, request, **kwargs):
+        logger = logging.getLogger('netbox.views.ObjectDeleteView')
+        obj = self.get_object(kwargs)
+        form = ConfirmationForm(request.POST)
+
+        if form.is_valid():
+            logger.debug("Form validation was successful")
+
+            try:
+                obj.delete()
+            except ProtectedError as e:
+                logger.info(
+                    "Caught ProtectedError while attempting to delete object")
+                handle_protectederror(obj, request, e)
+                return redirect(obj.get_absolute_url())
+
+            msg = 'Deleted {} {}'.format(self.model._meta.verbose_name, obj)
+            logger.info(msg)
+            messages.success(request, msg)
+
+            return_url = form.cleaned_data.get('return_url')
+            if return_url is not None and is_safe_url(url=return_url, allowed_hosts=request.get_host()):
+                return redirect(return_url)
+            else:
+                return redirect(self.get_return_url(request, obj))
+
+        else:
+            logger.debug("Form validation failed")
+
+        return render(request, self.template_name, {
+            'obj': obj,
+            'form': form,
+            'obj_type': self.model._meta.verbose_name,
+            'return_url': self.get_return_url(request, obj),
+        })
+
+
 class PaymentCreate (GetReturnURLMixin, View):
     """
     Create single payment
@@ -81,7 +145,8 @@ class PaymentCreate (GetReturnURLMixin, View):
         return obj
 
     def dispatch(self, request, *args, **kwargs):
-        self.obj = self.alter_obj(self.get_object(kwargs), request, args, kwargs)
+        self.obj = self.alter_obj(
+            self.get_object(kwargs), request, args, kwargs)
 
         return super().dispatch(request, *args, **kwargs)
 
@@ -101,24 +166,27 @@ class PaymentCreate (GetReturnURLMixin, View):
         logger = logging.getLogger('netbox.views.ObjectEditView')
         form = self.model_form(request.POST, request.FILES, instance=self.obj)
 
-
         if form.is_valid():
             logger.debug("Form validation was successful")
 
             obj = form.save()
-            string =''
+            string = ''
             for value in obj.devices.all():
                 if escape(obj) not in value.comments:
                     string = string + ' ' + value.name
-                    value.comments = value.comments + '\n\n Payment link - [{}]({})'.format(escape(obj), obj.get_absolute_url() )
-                    value.save() 
+                    value.comments = value.comments + \
+                        '\n\n Payment link - [{}]({})'.format(
+                            escape(obj), obj.get_absolute_url())
+                    value.save()
 
             for circ in obj.circuits.all():
                 if escape(obj) not in circ.comments:
                     string = string + ' ' + circ.cid
-                    circ.comments = circ.comments + '\n\n Payment link - [{}]({})'.format(escape(obj), obj.get_absolute_url() )
+                    circ.comments = circ.comments + \
+                        '\n\n Payment link - [{}]({})'.format(
+                            escape(obj), obj.get_absolute_url())
                     circ.save()
-            
+
             msg = '{} \n {} {}'.format(
                 'Links added to ->' + string,
                 'Created' if not form.instance.pk else 'Modified',
@@ -126,7 +194,8 @@ class PaymentCreate (GetReturnURLMixin, View):
             )
             logger.info(f"{msg} {obj} (PK: {obj.pk})")
             if hasattr(obj, 'get_absolute_url'):
-                msg = '{} <a href="{}">{}</a>'.format(msg, obj.get_absolute_url(), escape(obj))
+                msg = '{} <a href="{}">{}</a>'.format(
+                    msg, obj.get_absolute_url(), escape(obj))
             else:
                 msg = '{} {}'.format(msg, escape(obj))
             messages.success(request, mark_safe(msg))
@@ -135,7 +204,8 @@ class PaymentCreate (GetReturnURLMixin, View):
 
                 # If the object has clone_fields, pre-populate a new instance of the form
                 if hasattr(obj, 'clone_fields'):
-                    url = '{}?{}'.format(request.path, prepare_cloned_fields(obj))
+                    url = '{}?{}'.format(
+                        request.path, prepare_cloned_fields(obj))
                     return redirect(url)
 
                 return redirect(request.get_full_path())
@@ -156,6 +226,7 @@ class PaymentCreate (GetReturnURLMixin, View):
             'return_url': self.get_return_url(request, self.obj),
         })
 
+
 class PaymentListView(View, PermissionRequiredMixin):
     permission_required = 'payment.view_payment'
     queryset = Payment.objects.all()
@@ -163,7 +234,7 @@ class PaymentListView(View, PermissionRequiredMixin):
     filterset_form = forms.PaymentFilterForm
     table = tables.PaymentTable
     template_name = 'payment/obj_list.html'
-    action_buttons = ( 'export')
+    action_buttons = ('export')
     form = forms.ReportForm
 
     def queryset_to_csv(self):
@@ -208,12 +279,15 @@ class PaymentListView(View, PermissionRequiredMixin):
             obj_type=ContentType.objects.get_for_model(model)
         ).prefetch_related('choices')
         if custom_fields:
-            self.queryset = self.queryset.prefetch_related('custom_field_values')
+            self.queryset = self.queryset.prefetch_related(
+                'custom_field_values')
 
         # Check for export template rendering
         if request.GET.get('export'):
-            et = get_object_or_404(ExportTemplate, content_type=content_type, name=request.GET.get('export'))
-            queryset = CustomFieldQueryset(self.queryset, custom_fields) if custom_fields else self.queryset
+            et = get_object_or_404(
+                ExportTemplate, content_type=content_type, name=request.GET.get('export'))
+            queryset = CustomFieldQueryset(
+                self.queryset, custom_fields) if custom_fields else self.queryset
             try:
                 return et.render_to_response(queryset)
             except Exception as e:
@@ -226,16 +300,22 @@ class PaymentListView(View, PermissionRequiredMixin):
 
         # Check for YAML export support
         elif 'export' in request.GET and hasattr(model, 'to_yaml'):
-            response = HttpResponse(self.queryset_to_yaml(), content_type='text/yaml')
-            filename = 'netbox_{}.yaml'.format(self.queryset.model._meta.verbose_name_plural)
-            response['Content-Disposition'] = 'attachment; filename="{}"'.format(filename)
+            response = HttpResponse(
+                self.queryset_to_yaml(), content_type='text/yaml')
+            filename = 'netbox_{}.yaml'.format(
+                self.queryset.model._meta.verbose_name_plural)
+            response['Content-Disposition'] = 'attachment; filename="{}"'.format(
+                filename)
             return response
 
         # Fall back to built-in CSV formatting if export requested but no template specified
         elif 'export' in request.GET and hasattr(model, 'to_csv'):
-            response = HttpResponse(self.queryset_to_csv(), content_type='text/csv')
-            filename = 'netbox_{}.csv'.format(self.queryset.model._meta.verbose_name_plural)
-            response['Content-Disposition'] = 'attachment; filename="{}"'.format(filename)
+            response = HttpResponse(
+                self.queryset_to_csv(), content_type='text/csv')
+            filename = 'netbox_{}.csv'.format(
+                self.queryset.model._meta.verbose_name_plural)
+            response['Content-Disposition'] = 'attachment; filename="{}"'.format(
+                filename)
             return response
 
         # Provide a hook to tweak the queryset based on the request immediately prior to rendering the object list
@@ -244,7 +324,8 @@ class PaymentListView(View, PermissionRequiredMixin):
         # Compile a dictionary indicating which permissions are available to the current user for this model
         permissions = {}
         for action in ('add', 'change', 'delete', 'view'):
-            perm_name = '{}.{}_{}'.format(model._meta.app_label, action, model._meta.model_name)
+            perm_name = '{}.{}_{}'.format(
+                model._meta.app_label, action, model._meta.model_name)
             permissions[action] = request.user.has_perm(perm_name)
 
         # Construct the table based on the user's permissions
@@ -278,22 +359,25 @@ class PaymentListView(View, PermissionRequiredMixin):
     def extra_context(self):
         return {}
 
+
 class PaymentView(View, PermissionRequiredMixin):
     permission_required = 'payment.view_payment'
+
     def get(self, request, slug):
         model = Payment
 
-
         permissions = {}
         for action in ('add', 'change', 'delete', 'view'):
-            perm_name = '{}.{}_{}'.format(model._meta.app_label, action, model._meta.model_name)
+            perm_name = '{}.{}_{}'.format(
+                model._meta.app_label, action, model._meta.model_name)
             permissions[action] = request.user.has_perm(perm_name)
 
-        payment = get_object_or_404 (Payment.objects.filter(slug=slug))
+        payment = get_object_or_404(Payment.objects.filter(slug=slug))
         return render(request, 'payment/pay.html', {
-            'payment':payment,
+            'payment': payment,
             'permissions': permissions
         })
+
 
 class PaymentCreateView (PaymentCreate, PermissionRequiredMixin):
     permission_required = 'payment.add_payment'
@@ -301,12 +385,15 @@ class PaymentCreateView (PaymentCreate, PermissionRequiredMixin):
     model_form = forms.PaymentForm
     default_return_url = 'plugins:payment:payment_list'
 
+
 class PaymentEditView(PaymentCreateView):
     permission_required = 'payment.change_payment'
 
-class PaymentDeleteView(ObjectDeleteView):
+
+class PaymentDeleteView(PaymentDeleteView):
     model = Payment
     default_return_url = 'plugins:payment:payment_list'
+
 
 class ContractAttachementEditView(ObjectEditView):
     model = ContractFile
@@ -314,33 +401,32 @@ class ContractAttachementEditView(ObjectEditView):
 
     def alter_obj(self, contractfile, request, args, kwargs):
         if not contractfile.pk:
-            model = kwargs.get ('model')
-            contractfile.parent = get_object_or_404(model, pk=kwargs['object_id'])
+            model = kwargs.get('model')
+            contractfile.parent = get_object_or_404(
+                model, pk=kwargs['object_id'])
         return contractfile
-    
+
     def get_return_url(self, request, contractfile):
         return contractfile.parent.get_absolute_url()
 
+
 class ContractDeleteView(ObjectDeleteView):
     model = ContractFile
-    
+
     def get_return_url(self, request, contractfile):
         return contractfile.parent.get_absolute_url()
+
 
 class ReportView(View, PermissionRequiredMixin):
     permission_required = 'payment.view_payment'
     queryset = Payment.objects.all()
 
-
-    
-
-    def to_table (self,period):
-
+    def to_table(self, period):
 
         csv_data = []
 
         headers = self.queryset.model.csv_headers.copy()
-        csv_data.append(','.join(headers))  
+        csv_data.append(','.join(headers))
         for obj in Payment.objects.all():
             if period == 'Годовой':
                 if obj.period == 'monthly':
@@ -436,26 +522,26 @@ class ReportView(View, PermissionRequiredMixin):
 
         return '\n'.join(csv_data)
 
-    def post (self,request, *args, **kwargs):
+    def post(self, request, *args, **kwargs):
         data = forms.ReportForm(request.POST or None)
         if request.method == "POST" and data.is_valid():
-            value =  data.cleaned_data['date']
+            value = data.cleaned_data['date']
         response = HttpResponse(self.to_table(value), content_type='text/csv')
-        filename = 'netbox_{}.csv'.format(self.queryset.model._meta.verbose_name_plural)
-        response['Content-Disposition'] = 'attachment; filename="{}"'.format(filename)
+        filename = 'netbox_{}.csv'.format(
+            self.queryset.model._meta.verbose_name_plural)
+        response['Content-Disposition'] = 'attachment; filename="{}"'.format(
+            filename)
         return response
-    
 
-    
+
 def format_in_csv(data):
     """
     Encapsulate any data which contains a comma within double quotes.
     """
     csv = []
     arg_list = list(data)
-    arg_list[3] = '=' + str(arg_list[3])+ '*12'
+    arg_list[3] = '=' + str(arg_list[3]) + '*12'
     for value in arg_list:
-
 
         # Represent None or False with empty string
         if value is None or value is False:
@@ -477,4 +563,4 @@ def format_in_csv(data):
         else:
             csv.append('{}'.format(value))
 
-    return ','.join(csv) 
+    return ','.join(csv)
