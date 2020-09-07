@@ -1,0 +1,25 @@
+{% if images %}
+<table class="table table-hover panel-body">
+    <tr>
+        <th>Name</th>
+        <th>Created</th>
+        <th></th>
+    </tr>
+    {% for attachment in images %}
+    <tr>
+        <td> <a href="{{attachment.document.url}}" download> {{attachment.name}} </a> </td>
+        <td> {{ attachment.created }} </td>
+        <td>
+            {% if permissions.delete  %}
+            <a href= "{% url 'plugins:payment:contract_delete' pk=attachment.pk %}"
+            class="btn btn-xs btn-danger"><i class="glyphicon glyphicon-remove" aria-hidden="true"></i></a> 
+            {% endif %}
+        </td>
+    </tr>
+    {% endfor %}
+</table>
+{% else %}
+<div class="panel-body">
+    <span class="text-muted">None</span>
+</div>
+{% endif %}

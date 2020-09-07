@@ -1,0 +1,116 @@
+{% extends 'base.html' %}
+{% load buttons %}
+{% load static %}
+{% load helpers %}
+{% load custom_links %}
+
+{% block content %}
+{% if permissions.view  %}
+<h1> {{ payment.name }} </h1>
+
+
+<table class="table">
+    <tr>
+        <th> Field </th>
+        <th> Value </th>
+    </tr>
+    <tr>
+        <td>Назначение платежа</td>
+        <td>{{ payment.work_description }}</td>
+    </tr>
+    <tr>
+        <td>Подпроект</td>
+        <td>{{ payment.sub_project }}</td>
+    </tr>
+    <tr>
+        <td> Стоимость </td>
+        <td> {{payment.price}} {{payment.currency}} </td>
+    </tr>
+    <tr>
+        <td> Тип платежа </td>
+        <td>{{ payment.payment_type }}</td>
+    </tr>
+    <tr>
+        <td> Дата оплаты </td>
+        <td> {{ payment.payment_date }}
+    </tr>
+    <tr>
+        <td> Периодичность </td>
+        <td>{{ payment.period }} </td>
+    </tr>
+    <tr>
+        <td>Компания плательщик </td>
+        <td>{{ payment.comp }}</td>
+    </tr>
+    <tr>
+        <td>Контрагент</td>
+        <td>{{ payment.contractor }}</td>
+    </tr>
+    <tr>
+        <td> Связанные объекты </td>
+        <td>
+            {% for item in payment.devices.all  %}
+            <a href="{% url 'dcim:device' pk=item.id %}">
+                {{ item }},
+            </a>
+            <br>
+            {% endfor %}
+
+            {% for circ in payment.circuits.all %}
+            <a href="{% url 'circuits:circuit' pk=circ.id %}">
+                {{circ}},
+            </a>
+
+            {% endfor %}
+        </td>
+    </tr>
+    <tr>
+        <td> Comments </td>
+        <td> {{ payment.comments|render_markdown }} </td>
+    </tr>
+
+
+
+
+
+
+</table>
+
+<div class="panel panel-default">
+    <div class="panel-heading">
+        <strong>Contract Documents</strong>
+    </div>
+    {% include 'payment/contract_attachment.html' with images=payment.contract.all %}
+
+    {% if permissions.add %}
+    <div class="panel-footer text-right noprint">
+        <a href="{% url 'plugins:payment:contract_add' object_id=payment.pk%}" class="btn btn-primary btn-xs">
+            <span class="glyphicon glyphicon-plus" aria-hidden="true"></span>
+            Attach an contract
+        </a>
+    </div>
+    {% endif %}
+</div>
+
+
+
+{% if permissions.add %}
+
+<a href="{% url 'plugins:payment:payment_edit' pk=payment.pk %}" class="btn btn-warning"> Edit </a>
+
+{% endif %}
+
+{% if permissions.delete %}
+
+<a href="{% url 'plugins:payment:payment_delete' pk=payment.pk %}" class="btn btn-danger"> Delete </a>
+
+{% endif %}
+
+{% else %}
+<h1> Check your permissions </h1>
+
+{% endif %}
+
+
+
+{% endblock %}
