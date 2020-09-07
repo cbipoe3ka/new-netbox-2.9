@@ -101,8 +101,8 @@ form_helpers %} {% block content %} {% if permissions.view %}
         {% endif %}
       </div>
     </form>
-    {% else %} {% include table_template|default:'responsive_table.html' %} {%
-    endif %} {% endwith %} {% include 'inc/paginator.html' with
+    {% else %} {% include table_template|default:'responsive_table.html' %}
+    {%endif %} {% endwith %} {% include 'inc/paginator.html' with
     paginator=table.paginator page=table.page %}
     <div class="clearfix"></div>
   </div>
