@@ -2,7 +2,7 @@ from django.urls import path
 
 from extras.views import ObjectChangeLogView
 from . import views
-from .models import Aggregate, IPAddress, Prefix, RIR, Role, Service, VLAN, VLANGroup, VRF
+from .models import Aggregate, IPAddress, Prefix, RIR, Role, RouteTarget, Service, VLAN, VLANGroup, VRF
 
 app_name = 'ipam'
 urlpatterns = [
@@ -17,6 +17,17 @@ urlpatterns = [
     path('vrfs/<int:pk>/edit/', views.VRFEditView.as_view(), name='vrf_edit'),
     path('vrfs/<int:pk>/delete/', views.VRFDeleteView.as_view(), name='vrf_delete'),
     path('vrfs/<int:pk>/changelog/', ObjectChangeLogView.as_view(), name='vrf_changelog', kwargs={'model': VRF}),
+
+    # Route targets
+    path('route-targets/', views.RouteTargetListView.as_view(), name='routetarget_list'),
+    path('route-targets/add/', views.RouteTargetEditView.as_view(), name='routetarget_add'),
+    path('route-targets/import/', views.RouteTargetBulkImportView.as_view(), name='routetarget_import'),
+    path('route-targets/edit/', views.RouteTargetBulkEditView.as_view(), name='routetarget_bulk_edit'),
+    path('route-targets/delete/', views.RouteTargetBulkDeleteView.as_view(), name='routetarget_bulk_delete'),
+    path('route-targets/<int:pk>/', views.RouteTargetView.as_view(), name='routetarget'),
+    path('route-targets/<int:pk>/edit/', views.RouteTargetEditView.as_view(), name='routetarget_edit'),
+    path('route-targets/<int:pk>/delete/', views.RouteTargetDeleteView.as_view(), name='routetarget_delete'),
+    path('route-targets/<int:pk>/changelog/', ObjectChangeLogView.as_view(), name='routetarget_changelog', kwargs={'model': RouteTarget}),
 
     # RIRs
     path('rirs/', views.RIRListView.as_view(), name='rir_list'),
@@ -90,7 +101,8 @@ urlpatterns = [
     path('vlans/edit/', views.VLANBulkEditView.as_view(), name='vlan_bulk_edit'),
     path('vlans/delete/', views.VLANBulkDeleteView.as_view(), name='vlan_bulk_delete'),
     path('vlans/<int:pk>/', views.VLANView.as_view(), name='vlan'),
-    path('vlans/<int:pk>/members/', views.VLANMembersView.as_view(), name='vlan_members'),
+    path('vlans/<int:pk>/interfaces/', views.VLANInterfacesView.as_view(), name='vlan_interfaces'),
+    path('vlans/<int:pk>/vm-interfaces/', views.VLANVMInterfacesView.as_view(), name='vlan_vminterfaces'),
     path('vlans/<int:pk>/edit/', views.VLANEditView.as_view(), name='vlan_edit'),
     path('vlans/<int:pk>/delete/', views.VLANDeleteView.as_view(), name='vlan_delete'),
     path('vlans/<int:pk>/changelog/', ObjectChangeLogView.as_view(), name='vlan_changelog', kwargs={'model': VLAN}),

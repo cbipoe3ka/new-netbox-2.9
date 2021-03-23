@@ -16,7 +16,7 @@ from django.core.validators import URLValidator
 # Environment setup
 #
 
-VERSION = '2.9.3-dev'
+VERSION = '2.10.7-dev'
 
 # Hostname
 HOSTNAME = platform.node()
@@ -38,10 +38,12 @@ if platform.python_version_tuple() < ('3', '6'):
 # Import configuration parameters
 try:
     from netbox import configuration
-except ImportError:
-    raise ImproperlyConfigured(
-        "Configuration file is not present. Please define netbox/netbox/configuration.py per the documentation."
-    )
+except ModuleNotFoundError as e:
+    if getattr(e, 'name') == 'configuration':
+        raise ImproperlyConfigured(
+            "Configuration file is not present. Please define netbox/netbox/configuration.py per the documentation."
+        )
+    raise
 
 # Enforce required configuration parameters
 for parameter in ['ALLOWED_HOSTS', 'DATABASE', 'SECRET_KEY', 'REDIS']:
@@ -110,6 +112,7 @@ REMOTE_AUTH_HEADER = getattr(configuration, 'REMOTE_AUTH_HEADER', 'HTTP_REMOTE_U
 RELEASE_CHECK_URL = getattr(configuration, 'RELEASE_CHECK_URL', None)
 RELEASE_CHECK_TIMEOUT = getattr(configuration, 'RELEASE_CHECK_TIMEOUT', 24 * 3600)
 REPORTS_ROOT = getattr(configuration, 'REPORTS_ROOT', os.path.join(BASE_DIR, 'reports')).rstrip('/')
+RQ_DEFAULT_TIMEOUT = getattr(configuration, 'RQ_DEFAULT_TIMEOUT', 300)
 SCRIPTS_ROOT = getattr(configuration, 'SCRIPTS_ROOT', os.path.join(BASE_DIR, 'scripts')).rstrip('/')
 SESSION_FILE_PATH = getattr(configuration, 'SESSION_FILE_PATH', None)
 SHORT_DATE_FORMAT = getattr(configuration, 'SHORT_DATE_FORMAT', 'Y-m-d')
@@ -120,35 +123,20 @@ TIME_ZONE = getattr(configuration, 'TIME_ZONE', 'UTC')
 
 # Validate update repo URL and timeout
 if RELEASE_CHECK_URL:
-    try:
-        URLValidator(RELEASE_CHECK_URL)
-    except ValidationError:
-        raise ImproperlyConfigured(
+    validator = URLValidator(
+        message=(
             "RELEASE_CHECK_URL must be a valid API URL. Example: "
             "https://api.github.com/repos/netbox-community/netbox"
         )
+    )
+    try:
+        validator(RELEASE_CHECK_URL)
+    except ValidationError as err:
+        raise ImproperlyConfigured(str(err))
 
 # Enforce a minimum cache timeout for update checks
 if RELEASE_CHECK_TIMEOUT < 3600:
     raise ImproperlyConfigured("RELEASE_CHECK_TIMEOUT has to be at least 3600 seconds (1 hour)")
-
-# TODO: Remove in v2.10
-# Backward compatibility for REMOTE_AUTH_DEFAULT_PERMISSIONS
-if type(REMOTE_AUTH_DEFAULT_PERMISSIONS) is not dict:
-    try:
-        REMOTE_AUTH_DEFAULT_PERMISSIONS = {perm: None for perm in REMOTE_AUTH_DEFAULT_PERMISSIONS}
-        warnings.warn(
-            "REMOTE_AUTH_DEFAULT_PERMISSIONS should be a dictionary. Backward compatibility will be removed in v2.10."
-        )
-    except TypeError:
-        raise ImproperlyConfigured("REMOTE_AUTH_DEFAULT_PERMISSIONS must be a dictionary.")
-# Backward compatibility for REMOTE_AUTH_BACKEND
-if REMOTE_AUTH_BACKEND == 'utilities.auth_backends.RemoteUserBackend':
-    warnings.warn(
-        "RemoteUserBackend has moved! Please update your configuration to:\n"
-        "    REMOTE_AUTH_BACKEND='netbox.authentication.RemoteUserBackend'"
-    )
-    REMOTE_AUTH_BACKEND = 'netbox.authentication.RemoteUserBackend'
 
 
 #
@@ -182,11 +170,13 @@ if STORAGE_BACKEND is not None:
 
         try:
             import storages.utils
-        except ImportError:
-            raise ImproperlyConfigured(
-                "STORAGE_BACKEND is set to {} but django-storages is not present. It can be installed by running 'pip "
-                "install django-storages'.".format(STORAGE_BACKEND)
-            )
+        except ModuleNotFoundError as e:
+            if getattr(e, 'name') == 'storages':
+                raise ImproperlyConfigured(
+                    f"STORAGE_BACKEND is set to {STORAGE_BACKEND} but django-storages is not present. It can be "
+                    f"installed by running 'pip install django-storages'."
+                )
+            raise e
 
         # Monkey-patch django-storages to fetch settings from STORAGE_CONFIG
         def _setting(name, default=None):
@@ -220,9 +210,9 @@ TASKS_REDIS_USING_SENTINEL = all([
     len(TASKS_REDIS_SENTINELS) > 0
 ])
 TASKS_REDIS_SENTINEL_SERVICE = TASKS_REDIS.get('SENTINEL_SERVICE', 'default')
+TASKS_REDIS_SENTINEL_TIMEOUT = TASKS_REDIS.get('SENTINEL_TIMEOUT', 10)
 TASKS_REDIS_PASSWORD = TASKS_REDIS.get('PASSWORD', '')
 TASKS_REDIS_DATABASE = TASKS_REDIS.get('DATABASE', 0)
-TASKS_REDIS_DEFAULT_TIMEOUT = TASKS_REDIS.get('DEFAULT_TIMEOUT', 300)
 TASKS_REDIS_SSL = TASKS_REDIS.get('SSL', False)
 
 # Caching
@@ -241,7 +231,6 @@ CACHING_REDIS_USING_SENTINEL = all([
 CACHING_REDIS_SENTINEL_SERVICE = CACHING_REDIS.get('SENTINEL_SERVICE', 'default')
 CACHING_REDIS_PASSWORD = CACHING_REDIS.get('PASSWORD', '')
 CACHING_REDIS_DATABASE = CACHING_REDIS.get('DATABASE', 0)
-CACHING_REDIS_DEFAULT_TIMEOUT = CACHING_REDIS.get('DEFAULT_TIMEOUT', 300)
 CACHING_REDIS_SSL = CACHING_REDIS.get('SSL', False)
 
 
@@ -320,11 +309,11 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'django.middleware.security.SecurityMiddleware',
-    'utilities.middleware.ExceptionHandlingMiddleware',
-    'utilities.middleware.RemoteUserMiddleware',
-    'utilities.middleware.LoginRequiredMiddleware',
-    'utilities.middleware.APIVersionMiddleware',
-    'extras.middleware.ObjectChangeMiddleware',
+    'netbox.middleware.ExceptionHandlingMiddleware',
+    'netbox.middleware.RemoteUserMiddleware',
+    'netbox.middleware.LoginRequiredMiddleware',
+    'netbox.middleware.APIVersionMiddleware',
+    'netbox.middleware.ObjectChangeMiddleware',
     'django_prometheus.middleware.PrometheusAfterMiddleware',
 ]
 
@@ -343,7 +332,7 @@ TEMPLATES = [
                 'django.template.context_processors.media',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
-                'utilities.context_processors.settings_and_registry',
+                'netbox.context_processors.settings_and_registry',
             ],
         },
     },
@@ -405,6 +394,7 @@ if CACHING_REDIS_USING_SENTINEL:
         'locations': CACHING_REDIS_SENTINELS,
         'service_name': CACHING_REDIS_SENTINEL_SERVICE,
         'db': CACHING_REDIS_DATABASE,
+        'password': CACHING_REDIS_PASSWORD,
     }
 else:
     if CACHING_REDIS_SSL:
@@ -437,14 +427,15 @@ CACHEOPS = {
     'auth.*': {'ops': ('fetch', 'get')},
     'auth.permission': {'ops': 'all'},
     'circuits.*': {'ops': 'all'},
-    'dcim.region': None,  # MPTT models are exempt due to raw sql
-    'dcim.rackgroup': None,  # MPTT models are exempt due to raw sql
+    'dcim.inventoryitem': None,  # MPTT models are exempt due to raw SQL
+    'dcim.region': None,  # MPTT models are exempt due to raw SQL
+    'dcim.rackgroup': None,  # MPTT models are exempt due to raw SQL
     'dcim.*': {'ops': 'all'},
     'ipam.*': {'ops': 'all'},
     'extras.*': {'ops': 'all'},
     'secrets.*': {'ops': 'all'},
     'users.*': {'ops': 'all'},
-    'tenancy.tenantgroup': None,  # MPTT models are exempt due to raw sql
+    'tenancy.tenantgroup': None,  # MPTT models are exempt due to raw SQL
     'tenancy.*': {'ops': 'all'},
     'virtualization.*': {'ops': 'all'},
 }
@@ -475,23 +466,31 @@ REST_FRAMEWORK = {
     'ALLOWED_VERSIONS': [REST_FRAMEWORK_VERSION],
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework.authentication.SessionAuthentication',
-        'netbox.api.TokenAuthentication',
+        'netbox.api.authentication.TokenAuthentication',
     ),
     'DEFAULT_FILTER_BACKENDS': (
         'django_filters.rest_framework.DjangoFilterBackend',
     ),
-    'DEFAULT_PAGINATION_CLASS': 'netbox.api.OptionalLimitOffsetPagination',
+    'DEFAULT_METADATA_CLASS': 'netbox.api.metadata.BulkOperationMetadata',
+    'DEFAULT_PAGINATION_CLASS': 'netbox.api.pagination.OptionalLimitOffsetPagination',
     'DEFAULT_PERMISSION_CLASSES': (
-        'netbox.api.TokenPermissions',
+        'netbox.api.authentication.TokenPermissions',
     ),
     'DEFAULT_RENDERER_CLASSES': (
         'rest_framework.renderers.JSONRenderer',
-        'netbox.api.FormlessBrowsableAPIRenderer',
+        'netbox.api.renderers.FormlessBrowsableAPIRenderer',
     ),
     'DEFAULT_VERSION': REST_FRAMEWORK_VERSION,
     'DEFAULT_VERSIONING_CLASS': 'rest_framework.versioning.AcceptHeaderVersioning',
     'PAGE_SIZE': PAGINATE_COUNT,
-    'VIEW_NAME_FUNCTION': 'netbox.api.get_view_name',
+    'SCHEMA_COERCE_METHOD_NAMES': {
+        # Default mappings
+        'retrieve': 'read',
+        'destroy': 'delete',
+        # Custom operations
+        'bulk_destroy': 'bulk_delete',
+    },
+    'VIEW_NAME_FUNCTION': 'utilities.api.get_view_name',
 }
 
 
@@ -502,9 +501,10 @@ REST_FRAMEWORK = {
 SWAGGER_SETTINGS = {
     'DEFAULT_AUTO_SCHEMA_CLASS': 'utilities.custom_inspectors.NetBoxSwaggerAutoSchema',
     'DEFAULT_FIELD_INSPECTORS': [
+        'utilities.custom_inspectors.CustomFieldsDataFieldInspector',
         'utilities.custom_inspectors.JSONFieldInspector',
         'utilities.custom_inspectors.NullableBooleanFieldInspector',
-        'utilities.custom_inspectors.CustomChoiceFieldInspector',
+        'utilities.custom_inspectors.ChoiceFieldInspector',
         'utilities.custom_inspectors.SerializedPKRelatedFieldInspector',
         'drf_yasg.inspectors.CamelCaseJSONFilter',
         'drf_yasg.inspectors.ReferencingSerializerInspector',
@@ -549,7 +549,7 @@ if TASKS_REDIS_USING_SENTINEL:
         'PASSWORD': TASKS_REDIS_PASSWORD,
         'SOCKET_TIMEOUT': None,
         'CONNECTION_KWARGS': {
-            'socket_connect_timeout': TASKS_REDIS_DEFAULT_TIMEOUT
+            'socket_connect_timeout': TASKS_REDIS_SENTINEL_TIMEOUT
         },
     }
 else:
@@ -558,8 +558,8 @@ else:
         'PORT': TASKS_REDIS_PORT,
         'DB': TASKS_REDIS_DATABASE,
         'PASSWORD': TASKS_REDIS_PASSWORD,
-        'DEFAULT_TIMEOUT': TASKS_REDIS_DEFAULT_TIMEOUT,
         'SSL': TASKS_REDIS_SSL,
+        'DEFAULT_TIMEOUT': RQ_DEFAULT_TIMEOUT,
     }
 
 RQ_QUEUES = {
@@ -593,11 +593,13 @@ for plugin_name in PLUGINS:
     # Import plugin module
     try:
         plugin = importlib.import_module(plugin_name)
-    except ImportError:
-        raise ImproperlyConfigured(
-            "Unable to import plugin {}: Module not found. Check that the plugin module has been installed within the "
-            "correct Python environment.".format(plugin_name)
-        )
+    except ModuleNotFoundError as e:
+        if getattr(e, 'name') == plugin_name:
+            raise ImproperlyConfigured(
+                "Unable to import plugin {}: Module not found. Check that the plugin module has been installed within the "
+                "correct Python environment.".format(plugin_name)
+            )
+        raise e
 
     # Determine plugin config and add to INSTALLED_APPS.
     try:
@@ -612,7 +614,7 @@ for plugin_name in PLUGINS:
     # Validate user-provided configuration settings and assign defaults
     if plugin_name not in PLUGINS_CONFIG:
         PLUGINS_CONFIG[plugin_name] = {}
-    plugin_config.validate(PLUGINS_CONFIG[plugin_name])
+    plugin_config.validate(PLUGINS_CONFIG[plugin_name], VERSION)
 
     # Add middleware
     plugin_middleware = plugin_config.middleware

@@ -1,6 +1,7 @@
 import django_tables2 as tables
+from django.conf import settings
 
-from utilities.tables import BaseTable, BooleanColumn, ButtonsColumn, ColorColumn, ToggleColumn
+from utilities.tables import BaseTable, BooleanColumn, ButtonsColumn, ChoiceFieldColumn, ColorColumn, ToggleColumn
 from .models import ConfigContext, ObjectChange, Tag, TaggedItem
 
 TAGGED_ITEM = """
@@ -13,32 +14,16 @@ TAGGED_ITEM = """
 
 CONFIGCONTEXT_ACTIONS = """
 {% if perms.extras.change_configcontext %}
-    <a href="{% url 'extras:configcontext_edit' pk=record.pk %}" class="btn btn-xs btn-warning"><i class="glyphicon glyphicon-pencil" aria-hidden="true"></i></a>
+    <a href="{% url 'extras:configcontext_edit' pk=record.pk %}" class="btn btn-xs btn-warning"><i class="mdi mdi-pencil" aria-hidden="true"></i></a>
 {% endif %}
 {% if perms.extras.delete_configcontext %}
-    <a href="{% url 'extras:configcontext_delete' pk=record.pk %}" class="btn btn-xs btn-danger"><i class="glyphicon glyphicon-trash" aria-hidden="true"></i></a>
-{% endif %}
-"""
-
-OBJECTCHANGE_TIME = """
-<a href="{{ record.get_absolute_url }}">{{ value|date:"SHORT_DATETIME_FORMAT" }}</a>
-"""
-
-OBJECTCHANGE_ACTION = """
-{% if record.action == 'create' %}
-    <span class="label label-success">Created</span>
-{% elif record.action == 'update' %}
-    <span class="label label-primary">Updated</span>
-{% elif record.action == 'delete' %}
-    <span class="label label-danger">Deleted</span>
+    <a href="{% url 'extras:configcontext_delete' pk=record.pk %}" class="btn btn-xs btn-danger"><i class="mdi mdi-trash-can-outline" aria-hidden="true"></i></a>
 {% endif %}
 """
 
 OBJECTCHANGE_OBJECT = """
-{% if record.action != 3 and record.changed_object.get_absolute_url %}
+{% if record.changed_object.get_absolute_url %}
     <a href="{{ record.changed_object.get_absolute_url }}">{{ record.object_repr }}</a>
-{% elif record.action != 3 and record.related_object.get_absolute_url %}
-    <a href="{{ record.related_object.get_absolute_url }}">{{ record.object_repr }}</a>
 {% else %}
     {{ record.object_repr }}
 {% endif %}
@@ -91,12 +76,11 @@ class ConfigContextTable(BaseTable):
 
 
 class ObjectChangeTable(BaseTable):
-    time = tables.TemplateColumn(
-        template_code=OBJECTCHANGE_TIME
+    time = tables.DateTimeColumn(
+        linkify=True,
+        format=settings.SHORT_DATETIME_FORMAT
     )
-    action = tables.TemplateColumn(
-        template_code=OBJECTCHANGE_ACTION
-    )
+    action = ChoiceFieldColumn()
     changed_object_type = tables.Column(
         verbose_name='Type'
     )

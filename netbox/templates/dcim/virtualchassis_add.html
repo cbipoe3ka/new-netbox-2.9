@@ -1,4 +1,4 @@
-{% extends 'utilities/obj_edit.html' %}
+{% extends 'generic/object_edit.html' %}
 {% load form_helpers %}
 
 {% block form %}
@@ -13,10 +13,19 @@
     <div class="panel panel-default">
         <div class="panel-heading"><strong>Member Devices</strong></div>
         <div class="panel-body">
+            {% render_field form.region %}
             {% render_field form.site %}
             {% render_field form.rack %}
             {% render_field form.members %}
             {% render_field form.initial_position %}
         </div>
     </div>
+    {% if form.custom_fields %}
+        <div class="panel panel-default">
+            <div class="panel-heading"><strong>Custom Fields</strong></div>
+            <div class="panel-body">
+                {% render_custom_fields form %}
+            </div>
+        </div>
+    {% endif %}
 {% endblock %}

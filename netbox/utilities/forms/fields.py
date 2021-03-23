@@ -5,13 +5,13 @@ from io import StringIO
 
 import django_filters
 from django import forms
+from django.conf import settings
 from django.forms.fields import JSONField as _JSONField, InvalidJSONInput
-from django.core.exceptions import MultipleObjectsReturned
+from django.core.exceptions import MultipleObjectsReturned, ObjectDoesNotExist
 from django.db.models import Count
 from django.forms import BoundField
 from django.urls import reverse
 
-from utilities.api import get_serializer_for_model
 from utilities.choices import unpack_grouped_choices
 from utilities.validators import EnhancedURLValidator
 from . import widgets
@@ -21,6 +21,7 @@ from .utils import expand_alphanumeric_pattern, expand_ipaddress_pattern
 __all__ = (
     'CommentField',
     'CSVChoiceField',
+    'CSVContentTypeField',
     'CSVDataField',
     'CSVModelChoiceField',
     'DynamicModelChoiceField',
@@ -117,18 +118,11 @@ class CSVChoiceField(forms.ChoiceField):
     """
     Invert the provided set of choices to take the human-friendly label as input, and return the database value.
     """
-    def __init__(self, choices, *args, **kwargs):
-        super().__init__(choices=choices, *args, **kwargs)
-        self.choices = [(label, label) for value, label in unpack_grouped_choices(choices)]
-        self.choice_values = {label: value for value, label in unpack_grouped_choices(choices)}
+    STATIC_CHOICES = True
 
-    def clean(self, value):
-        value = super().clean(value)
-        if not value:
-            return ''
-        if value not in self.choice_values:
-            raise forms.ValidationError("Invalid choice: {}".format(value))
-        return self.choice_values[value]
+    def __init__(self, *, choices=(), **kwargs):
+        super().__init__(choices=choices, **kwargs)
+        self.choices = unpack_grouped_choices(choices)
 
 
 class CSVModelChoiceField(forms.ModelChoiceField):
@@ -142,10 +136,30 @@ class CSVModelChoiceField(forms.ModelChoiceField):
     def to_python(self, value):
         try:
             return super().to_python(value)
-        except MultipleObjectsReturned as e:
+        except MultipleObjectsReturned:
             raise forms.ValidationError(
                 f'"{value}" is not a unique value for this field; multiple objects were found'
             )
+
+
+class CSVContentTypeField(CSVModelChoiceField):
+    """
+    Reference a ContentType in the form <app>.<model>
+    """
+    STATIC_CHOICES = True
+
+    def prepare_value(self, value):
+        return f'{value.app_label}.{value.model}'
+
+    def to_python(self, value):
+        try:
+            app_label, model = value.split('.')
+        except ValueError:
+            raise forms.ValidationError(f'Object type must be specified as "<app>.<model>"')
+        try:
+            return self.queryset.get(app_label=app_label, model=model)
+        except ObjectDoesNotExist:
+            raise forms.ValidationError(f'Invalid object type')
 
 
 class ExpandableNameField(forms.CharField):
@@ -200,8 +214,8 @@ class CommentField(forms.CharField):
     widget = forms.Textarea
     default_label = ''
     # TODO: Port Markdown cheat sheet to internal documentation
-    default_helptext = '<i class="fa fa-info-circle"></i> '\
-                       '<a href="https://github.com/adam-p/markdown-here/wiki/Markdown-Cheatsheet" target="_blank">'\
+    default_helptext = '<i class="mdi mdi-information-outline"></i> '\
+                       '<a href="https://github.com/adam-p/markdown-here/wiki/Markdown-Cheatsheet" target="_blank" tabindex="-1">'\
                        'Markdown</a> syntax is supported'
 
     def __init__(self, *args, **kwargs):
@@ -248,6 +262,7 @@ class DynamicModelChoiceMixin:
     """
     :param display_field: The name of the attribute of an API response object to display in the selection list
     :param query_params: A dictionary of additional key/value pairs to attach to the API request
+    :param initial_params: A dictionary of child field references to use for selecting a parent field's initial value
     :param null_option: The string used to represent a null selection (if any)
     :param disabled_indicator: The name of the field which, if populated, will disable selection of the
         choice (optional)
@@ -256,10 +271,11 @@ class DynamicModelChoiceMixin:
     filter = django_filters.ModelChoiceFilter
     widget = widgets.APISelect
 
-    def __init__(self, display_field='name', query_params=None, null_option=None, disabled_indicator=None,
-                 brief_mode=True, *args, **kwargs):
+    def __init__(self, display_field='name', query_params=None, initial_params=None, null_option=None,
+                 disabled_indicator=None, brief_mode=True, *args, **kwargs):
         self.display_field = display_field
         self.query_params = query_params or {}
+        self.initial_params = initial_params or {}
         self.null_option = null_option
         self.disabled_indicator = disabled_indicator
         self.brief_mode = brief_mode
@@ -300,6 +316,16 @@ class DynamicModelChoiceMixin:
     def get_bound_field(self, form, field_name):
         bound_field = BoundField(form, self, field_name)
 
+        # Set initial value based on prescribed child fields (if not already set)
+        if not self.initial and self.initial_params:
+            filter_kwargs = {}
+            for kwarg, child_field in self.initial_params.items():
+                value = form.initial.get(child_field.lstrip('$'))
+                if value:
+                    filter_kwargs[kwarg] = value
+            if filter_kwargs:
+                self.initial = self.queryset.filter(**filter_kwargs).first()
+
         # Modify the QuerySet of the field before we return it. Limit choices to any data already bound: Options
         # will be populated on-demand via the APISelect widget.
         data = bound_field.value()
@@ -330,7 +356,15 @@ class DynamicModelChoiceField(DynamicModelChoiceMixin, forms.ModelChoiceField):
     Override get_bound_field() to avoid pre-populating field choices with a SQL query. The field will be
     rendered only with choices set via bound data. Choices are populated on-demand via the APISelect widget.
     """
-    pass
+
+    def clean(self, value):
+        """
+        When null option is enabled and "None" is sent as part of a form to be submitted, it is sent as the
+        string 'null'.  This will check for that condition and gracefully handle the conversion to a NoneType.
+        """
+        if self.null_option is not None and value == settings.FILTERS_NULL_CHOICE_VALUE:
+            return None
+        return super().clean(value)
 
 
 class DynamicModelMultipleChoiceField(DynamicModelChoiceMixin, forms.ModelMultipleChoiceField):

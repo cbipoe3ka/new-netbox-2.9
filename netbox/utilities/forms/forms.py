@@ -82,6 +82,7 @@ class BulkRenameForm(forms.Form):
     )
 
     def clean(self):
+        super().clean()
 
         # Validate regular expression in "find" field
         if self.cleaned_data['use_regex']:
@@ -124,6 +125,7 @@ class ImportForm(BootstrapMixin, forms.Form):
     )
 
     def clean(self):
+        super().clean()
 
         data = self.cleaned_data['data']
         format = self.cleaned_data['format']
@@ -161,6 +163,7 @@ class TableConfigForm(BootstrapMixin, forms.Form):
     """
     columns = forms.MultipleChoiceField(
         choices=[],
+        required=False,
         widget=forms.SelectMultiple(
             attrs={'size': 10}
         ),
@@ -168,8 +171,14 @@ class TableConfigForm(BootstrapMixin, forms.Form):
     )
 
     def __init__(self, table, *args, **kwargs):
+        self.table = table
+
         super().__init__(*args, **kwargs)
 
         # Initialize columns field based on table attributes
         self.fields['columns'].choices = table.configurable_columns
         self.fields['columns'].initial = table.visible_columns
+
+    @property
+    def table_name(self):
+        return self.table.__class__.__name__

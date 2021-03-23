@@ -2,7 +2,7 @@ import socket
 from collections import OrderedDict
 
 from django.conf import settings
-from django.db.models import Count, F
+from django.db.models import F
 from django.http import HttpResponseForbidden, HttpResponse
 from django.shortcuts import get_object_or_404
 from drf_yasg import openapi
@@ -17,21 +17,20 @@ from rest_framework.viewsets import GenericViewSet, ViewSet
 from circuits.models import Circuit
 from dcim import filters
 from dcim.models import (
-    Cable, ConsolePort, ConsolePortTemplate, ConsoleServerPort, ConsoleServerPortTemplate, Device, DeviceBay,
+    Cable, CablePath, ConsolePort, ConsolePortTemplate, ConsoleServerPort, ConsoleServerPortTemplate, Device, DeviceBay,
     DeviceBayTemplate, DeviceRole, DeviceType, FrontPort, FrontPortTemplate, Interface, InterfaceTemplate,
     Manufacturer, InventoryItem, Platform, PowerFeed, PowerOutlet, PowerOutletTemplate, PowerPanel, PowerPort,
     PowerPortTemplate, Rack, RackGroup, RackReservation, RackRole, RearPort, RearPortTemplate, Region, Site,
     VirtualChassis,
 )
-from extras.api.serializers import RenderedGraphSerializer
-from extras.api.views import CustomFieldModelViewSet
-from extras.models import Graph
+from extras.api.views import ConfigContextQuerySetMixin, CustomFieldModelViewSet
 from ipam.models import Prefix, VLAN
-from utilities.api import (
-    get_serializer_for_model, IsAuthenticatedOrLoginNotRequired, ModelViewSet, ServiceUnavailable,
-)
-from utilities.utils import get_subquery
-from utilities.metadata import ContentTypeMetadata
+from netbox.api.views import ModelViewSet
+from netbox.api.authentication import IsAuthenticatedOrLoginNotRequired
+from netbox.api.exceptions import ServiceUnavailable
+from netbox.api.metadata import ContentTypeMetadata
+from utilities.api import get_serializer_for_model
+from utilities.utils import count_related
 from virtualization.models import VirtualMachine
 from . import serializers
 from .exceptions import MissingFilterException
@@ -47,7 +46,7 @@ class DCIMRootView(APIRootView):
 
 # Mixins
 
-class CableTraceMixin(object):
+class PathEndpointMixin(object):
 
     @action(detail=True, url_path='trace')
     def trace(self, request, pk):
@@ -59,7 +58,10 @@ class CableTraceMixin(object):
         # Initialize the path array
         path = []
 
-        for near_end, cable, far_end in obj.trace()[0]:
+        for near_end, cable, far_end in obj.trace():
+            if near_end is None:
+                # Split paths
+                break
 
             # Serialize each object
             serializer_a = get_serializer_for_model(near_end, prefix='Nested')
@@ -77,6 +79,20 @@ class CableTraceMixin(object):
             path.append((x, y, z))
 
         return Response(path)
+
+
+class PassThroughPortMixin(object):
+
+    @action(detail=True, url_path='paths')
+    def paths(self, request, pk):
+        """
+        Return all CablePaths which traverse a given pass-through port.
+        """
+        obj = get_object_or_404(self.queryset, pk=pk)
+        cablepaths = CablePath.objects.filter(path__contains=obj).prefetch_related('origin', 'destination')
+        serializer = serializers.CablePathSerializer(cablepaths, context={'request': request}, many=True)
+
+        return Response(serializer.data)
 
 
 #
@@ -103,25 +119,15 @@ class SiteViewSet(CustomFieldModelViewSet):
     queryset = Site.objects.prefetch_related(
         'region', 'tenant', 'tags'
     ).annotate(
-        device_count=get_subquery(Device, 'site'),
-        rack_count=get_subquery(Rack, 'site'),
-        prefix_count=get_subquery(Prefix, 'site'),
-        vlan_count=get_subquery(VLAN, 'site'),
-        circuit_count=get_subquery(Circuit, 'terminations__site'),
-        virtualmachine_count=get_subquery(VirtualMachine, 'cluster__site'),
-    ).order_by(*Site._meta.ordering)
+        device_count=count_related(Device, 'site'),
+        rack_count=count_related(Rack, 'site'),
+        prefix_count=count_related(Prefix, 'site'),
+        vlan_count=count_related(VLAN, 'site'),
+        circuit_count=count_related(Circuit, 'terminations__site'),
+        virtualmachine_count=count_related(VirtualMachine, 'cluster__site')
+    )
     serializer_class = serializers.SiteSerializer
     filterset_class = filters.SiteFilterSet
-
-    @action(detail=True)
-    def graphs(self, request, pk):
-        """
-        A convenience method for rendering graphs for a particular site.
-        """
-        site = get_object_or_404(self.queryset, pk=pk)
-        queryset = Graph.objects.restrict(request.user).filter(type__model='site')
-        serializer = RenderedGraphSerializer(queryset, many=True, context={'graphed_object': site})
-        return Response(serializer.data)
 
 
 #
@@ -146,8 +152,8 @@ class RackGroupViewSet(ModelViewSet):
 
 class RackRoleViewSet(ModelViewSet):
     queryset = RackRole.objects.annotate(
-        rack_count=Count('racks')
-    ).order_by(*RackRole._meta.ordering)
+        rack_count=count_related(Rack, 'role')
+    )
     serializer_class = serializers.RackRoleSerializer
     filterset_class = filters.RackRoleFilterSet
 
@@ -160,9 +166,9 @@ class RackViewSet(CustomFieldModelViewSet):
     queryset = Rack.objects.prefetch_related(
         'site', 'group__site', 'role', 'tenant', 'tags'
     ).annotate(
-        device_count=get_subquery(Device, 'rack'),
-        powerfeed_count=get_subquery(PowerFeed, 'rack')
-    ).order_by(*Rack._meta.ordering)
+        device_count=count_related(Device, 'rack'),
+        powerfeed_count=count_related(PowerFeed, 'rack')
+    )
     serializer_class = serializers.RackSerializer
     filterset_class = filters.RackFilterSet
 
@@ -234,10 +240,10 @@ class RackReservationViewSet(ModelViewSet):
 
 class ManufacturerViewSet(ModelViewSet):
     queryset = Manufacturer.objects.annotate(
-        devicetype_count=get_subquery(DeviceType, 'manufacturer'),
-        inventoryitem_count=get_subquery(InventoryItem, 'manufacturer'),
-        platform_count=get_subquery(Platform, 'manufacturer')
-    ).order_by(*Manufacturer._meta.ordering)
+        devicetype_count=count_related(DeviceType, 'manufacturer'),
+        inventoryitem_count=count_related(InventoryItem, 'manufacturer'),
+        platform_count=count_related(Platform, 'manufacturer')
+    )
     serializer_class = serializers.ManufacturerSerializer
     filterset_class = filters.ManufacturerFilterSet
 
@@ -248,10 +254,11 @@ class ManufacturerViewSet(ModelViewSet):
 
 class DeviceTypeViewSet(CustomFieldModelViewSet):
     queryset = DeviceType.objects.prefetch_related('manufacturer', 'tags').annotate(
-        device_count=Count('instances')
-    ).order_by(*DeviceType._meta.ordering)
+        device_count=count_related(Device, 'device_type')
+    )
     serializer_class = serializers.DeviceTypeSerializer
     filterset_class = filters.DeviceTypeFilterSet
+    brief_prefetch_fields = ['manufacturer']
 
 
 #
@@ -312,9 +319,9 @@ class DeviceBayTemplateViewSet(ModelViewSet):
 
 class DeviceRoleViewSet(ModelViewSet):
     queryset = DeviceRole.objects.annotate(
-        device_count=get_subquery(Device, 'device_role'),
-        virtualmachine_count=get_subquery(VirtualMachine, 'role')
-    ).order_by(*DeviceRole._meta.ordering)
+        device_count=count_related(Device, 'device_role'),
+        virtualmachine_count=count_related(VirtualMachine, 'role')
+    )
     serializer_class = serializers.DeviceRoleSerializer
     filterset_class = filters.DeviceRoleFilterSet
 
@@ -325,9 +332,9 @@ class DeviceRoleViewSet(ModelViewSet):
 
 class PlatformViewSet(ModelViewSet):
     queryset = Platform.objects.annotate(
-        device_count=get_subquery(Device, 'platform'),
-        virtualmachine_count=get_subquery(VirtualMachine, 'platform')
-    ).order_by(*Platform._meta.ordering)
+        device_count=count_related(Device, 'platform'),
+        virtualmachine_count=count_related(VirtualMachine, 'platform')
+    )
     serializer_class = serializers.PlatformSerializer
     filterset_class = filters.PlatformFilterSet
 
@@ -336,7 +343,7 @@ class PlatformViewSet(ModelViewSet):
 # Devices
 #
 
-class DeviceViewSet(CustomFieldModelViewSet):
+class DeviceViewSet(ConfigContextQuerySetMixin, CustomFieldModelViewSet):
     queryset = Device.objects.prefetch_related(
         'device_type__manufacturer', 'device_role', 'tenant', 'platform', 'site', 'rack', 'parent_bay',
         'virtual_chassis__master', 'primary_ip4__nat_outside', 'primary_ip6__nat_outside', 'tags',
@@ -363,17 +370,6 @@ class DeviceViewSet(CustomFieldModelViewSet):
 
         return serializers.DeviceWithConfigContextSerializer
 
-    @action(detail=True)
-    def graphs(self, request, pk):
-        """
-        A convenience method for rendering graphs for a particular Device.
-        """
-        device = get_object_or_404(self.queryset, pk=pk)
-        queryset = Graph.objects.restrict(request.user).filter(type__model='device')
-        serializer = RenderedGraphSerializer(queryset, many=True, context={'graphed_object': device})
-
-        return Response(serializer.data)
-
     @swagger_auto_schema(
         manual_parameters=[
             Parameter(
@@ -396,9 +392,7 @@ class DeviceViewSet(CustomFieldModelViewSet):
         if device.platform is None:
             raise ServiceUnavailable("No platform is configured for this device.")
         if not device.platform.napalm_driver:
-            raise ServiceUnavailable("No NAPALM driver is configured for this device's platform {}.".format(
-                device.platform
-            ))
+            raise ServiceUnavailable(f"No NAPALM driver is configured for this device's platform: {device.platform}.")
 
         # Check for primary IP address from NetBox object
         if device.primary_ip:
@@ -407,21 +401,25 @@ class DeviceViewSet(CustomFieldModelViewSet):
             # Raise exception for no IP address and no Name if device.name does not exist
             if not device.name:
                 raise ServiceUnavailable(
-                    "This device does not have a primary IP address or device name to lookup configured.")
+                    "This device does not have a primary IP address or device name to lookup configured."
+                )
             try:
                 # Attempt to complete a DNS name resolution if no primary_ip is set
                 host = socket.gethostbyname(device.name)
             except socket.gaierror:
                 # Name lookup failure
                 raise ServiceUnavailable(
-                    f"Name lookup failure, unable to resolve IP address for {device.name}. Please set Primary IP or setup name resolution.")
+                    f"Name lookup failure, unable to resolve IP address for {device.name}. Please set Primary IP or "
+                    f"setup name resolution.")
 
         # Check that NAPALM is installed
         try:
             import napalm
             from napalm.base.exceptions import ModuleImportError
-        except ImportError:
-            raise ServiceUnavailable("NAPALM is not installed. Please see the documentation for instructions.")
+        except ModuleNotFoundError as e:
+            if getattr(e, 'name') == 'napalm':
+                raise ServiceUnavailable("NAPALM is not installed. Please see the documentation for instructions.")
+            raise e
 
         # Validate the configured driver
         try:
@@ -492,74 +490,71 @@ class DeviceViewSet(CustomFieldModelViewSet):
 # Device components
 #
 
-class ConsolePortViewSet(CableTraceMixin, ModelViewSet):
-    queryset = ConsolePort.objects.prefetch_related('device', 'connected_endpoint__device', 'cable', 'tags')
+class ConsolePortViewSet(PathEndpointMixin, ModelViewSet):
+    queryset = ConsolePort.objects.prefetch_related('device', '_path__destination', 'cable', '_cable_peer', 'tags')
     serializer_class = serializers.ConsolePortSerializer
     filterset_class = filters.ConsolePortFilterSet
+    brief_prefetch_fields = ['device']
 
 
-class ConsoleServerPortViewSet(CableTraceMixin, ModelViewSet):
-    queryset = ConsoleServerPort.objects.prefetch_related('device', 'connected_endpoint__device', 'cable', 'tags')
+class ConsoleServerPortViewSet(PathEndpointMixin, ModelViewSet):
+    queryset = ConsoleServerPort.objects.prefetch_related(
+        'device', '_path__destination', 'cable', '_cable_peer', 'tags'
+    )
     serializer_class = serializers.ConsoleServerPortSerializer
     filterset_class = filters.ConsoleServerPortFilterSet
+    brief_prefetch_fields = ['device']
 
 
-class PowerPortViewSet(CableTraceMixin, ModelViewSet):
-    queryset = PowerPort.objects.prefetch_related(
-        'device', '_connected_poweroutlet__device', '_connected_powerfeed', 'cable', 'tags'
-    )
+class PowerPortViewSet(PathEndpointMixin, ModelViewSet):
+    queryset = PowerPort.objects.prefetch_related('device', '_path__destination', 'cable', '_cable_peer', 'tags')
     serializer_class = serializers.PowerPortSerializer
     filterset_class = filters.PowerPortFilterSet
+    brief_prefetch_fields = ['device']
 
 
-class PowerOutletViewSet(CableTraceMixin, ModelViewSet):
-    queryset = PowerOutlet.objects.prefetch_related('device', 'connected_endpoint__device', 'cable', 'tags')
+class PowerOutletViewSet(PathEndpointMixin, ModelViewSet):
+    queryset = PowerOutlet.objects.prefetch_related('device', '_path__destination', 'cable', '_cable_peer', 'tags')
     serializer_class = serializers.PowerOutletSerializer
     filterset_class = filters.PowerOutletFilterSet
+    brief_prefetch_fields = ['device']
 
 
-class InterfaceViewSet(CableTraceMixin, ModelViewSet):
+class InterfaceViewSet(PathEndpointMixin, ModelViewSet):
     queryset = Interface.objects.prefetch_related(
-        'device', '_connected_interface', '_connected_circuittermination', 'cable', 'ip_addresses', 'tags'
-    ).filter(
-        device__isnull=False
+        'device', '_path__destination', 'cable', '_cable_peer', 'ip_addresses', 'tags'
     )
     serializer_class = serializers.InterfaceSerializer
     filterset_class = filters.InterfaceFilterSet
-
-    @action(detail=True)
-    def graphs(self, request, pk):
-        """
-        A convenience method for rendering graphs for a particular interface.
-        """
-        interface = get_object_or_404(self.queryset, pk=pk)
-        queryset = Graph.objects.restrict(request.user).filter(type__model='interface')
-        serializer = RenderedGraphSerializer(queryset, many=True, context={'graphed_object': interface})
-        return Response(serializer.data)
+    brief_prefetch_fields = ['device']
 
 
-class FrontPortViewSet(CableTraceMixin, ModelViewSet):
+class FrontPortViewSet(PassThroughPortMixin, ModelViewSet):
     queryset = FrontPort.objects.prefetch_related('device__device_type__manufacturer', 'rear_port', 'cable', 'tags')
     serializer_class = serializers.FrontPortSerializer
     filterset_class = filters.FrontPortFilterSet
+    brief_prefetch_fields = ['device']
 
 
-class RearPortViewSet(CableTraceMixin, ModelViewSet):
+class RearPortViewSet(PassThroughPortMixin, ModelViewSet):
     queryset = RearPort.objects.prefetch_related('device__device_type__manufacturer', 'cable', 'tags')
     serializer_class = serializers.RearPortSerializer
     filterset_class = filters.RearPortFilterSet
+    brief_prefetch_fields = ['device']
 
 
 class DeviceBayViewSet(ModelViewSet):
     queryset = DeviceBay.objects.prefetch_related('installed_device').prefetch_related('tags')
     serializer_class = serializers.DeviceBaySerializer
     filterset_class = filters.DeviceBayFilterSet
+    brief_prefetch_fields = ['device']
 
 
 class InventoryItemViewSet(ModelViewSet):
     queryset = InventoryItem.objects.prefetch_related('device', 'manufacturer').prefetch_related('tags')
     serializer_class = serializers.InventoryItemSerializer
     filterset_class = filters.InventoryItemFilterSet
+    brief_prefetch_fields = ['device']
 
 
 #
@@ -567,32 +562,26 @@ class InventoryItemViewSet(ModelViewSet):
 #
 
 class ConsoleConnectionViewSet(ListModelMixin, GenericViewSet):
-    queryset = ConsolePort.objects.prefetch_related(
-        'device', 'connected_endpoint__device'
-    ).filter(
-        connected_endpoint__isnull=False
+    queryset = ConsolePort.objects.prefetch_related('device', '_path').filter(
+        _path__destination_id__isnull=False
     )
     serializer_class = serializers.ConsolePortSerializer
     filterset_class = filters.ConsoleConnectionFilterSet
 
 
 class PowerConnectionViewSet(ListModelMixin, GenericViewSet):
-    queryset = PowerPort.objects.prefetch_related(
-        'device', 'connected_endpoint__device'
-    ).filter(
-        _connected_poweroutlet__isnull=False
+    queryset = PowerPort.objects.prefetch_related('device', '_path').filter(
+        _path__destination_id__isnull=False
     )
     serializer_class = serializers.PowerPortSerializer
     filterset_class = filters.PowerConnectionFilterSet
 
 
 class InterfaceConnectionViewSet(ListModelMixin, GenericViewSet):
-    queryset = Interface.objects.prefetch_related(
-        'device', '_connected_interface__device'
-    ).filter(
+    queryset = Interface.objects.prefetch_related('device', '_path').filter(
         # Avoid duplicate connections by only selecting the lower PK in a connected pair
-        _connected_interface__isnull=False,
-        pk__lt=F('_connected_interface')
+        _path__destination_id__isnull=False,
+        pk__lt=F('_path__destination_id')
     )
     serializer_class = serializers.InterfaceConnectionSerializer
     filterset_class = filters.InterfaceConnectionFilterSet
@@ -617,10 +606,11 @@ class CableViewSet(ModelViewSet):
 
 class VirtualChassisViewSet(ModelViewSet):
     queryset = VirtualChassis.objects.prefetch_related('tags').annotate(
-        member_count=Count('members', distinct=True)
-    ).order_by(*VirtualChassis._meta.ordering)
+        member_count=count_related(Device, 'virtual_chassis')
+    )
     serializer_class = serializers.VirtualChassisSerializer
     filterset_class = filters.VirtualChassisFilterSet
+    brief_prefetch_fields = ['master']
 
 
 #
@@ -631,8 +621,8 @@ class PowerPanelViewSet(ModelViewSet):
     queryset = PowerPanel.objects.prefetch_related(
         'site', 'rack_group'
     ).annotate(
-        powerfeed_count=Count('powerfeeds')
-    ).order_by(*PowerPanel._meta.ordering)
+        powerfeed_count=count_related(PowerFeed, 'power_panel')
+    )
     serializer_class = serializers.PowerPanelSerializer
     filterset_class = filters.PowerPanelFilterSet
 
@@ -641,8 +631,10 @@ class PowerPanelViewSet(ModelViewSet):
 # Power feeds
 #
 
-class PowerFeedViewSet(CustomFieldModelViewSet):
-    queryset = PowerFeed.objects.prefetch_related('power_panel', 'rack', 'tags')
+class PowerFeedViewSet(PathEndpointMixin, CustomFieldModelViewSet):
+    queryset = PowerFeed.objects.prefetch_related(
+        'power_panel', 'rack', '_path__destination', 'cable', '_cable_peer', 'tags'
+    )
     serializer_class = serializers.PowerFeedSerializer
     filterset_class = filters.PowerFeedFilterSet
 
@@ -697,7 +689,7 @@ class ConnectedDeviceViewSet(ViewSet):
             device__name=peer_device_name,
             name=peer_interface_name
         )
-        local_interface = peer_interface._connected_interface
+        local_interface = peer_interface.connected_endpoint
 
         if local_interface is None:
             return Response()

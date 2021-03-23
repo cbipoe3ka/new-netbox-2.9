@@ -114,7 +114,10 @@ class ContentTypeSelect(StaticSelect2):
 class NumericArrayField(SimpleArrayField):
 
     def to_python(self, value):
-        value = ','.join([str(n) for n in parse_numeric_range(value)])
+        if not value:
+            return []
+        if isinstance(value, str):
+            value = ','.join([str(n) for n in parse_numeric_range(value)])
         return super().to_python(value)
 
 
@@ -141,7 +144,7 @@ class APISelect(SelectWithDisabled):
         key = f'data-query-param-{name}'
 
         values = json.loads(self.attrs.get(key, '[]'))
-        if type(value) is list:
+        if type(value) in (list, tuple):
             values.extend([str(v) for v in value])
         else:
             values.append(str(value))

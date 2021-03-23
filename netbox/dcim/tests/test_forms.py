@@ -82,7 +82,7 @@ class DeviceTestCase(TestCase):
         self.assertTrue(form.is_valid())
         self.assertTrue(form.save())
 
-    def test_non_racked_device_with_face_position(self):
+    def test_non_racked_device_with_face(self):
         form = DeviceForm(data={
             'name': 'New Device',
             'device_role': DeviceRole.objects.first().pk,
@@ -92,30 +92,27 @@ class DeviceTestCase(TestCase):
             'site': Site.objects.first().pk,
             'rack': None,
             'face': DeviceFaceChoices.FACE_REAR,
-            'position': 10,
             'platform': None,
             'status': DeviceStatusChoices.STATUS_ACTIVE,
         })
         self.assertFalse(form.is_valid())
         self.assertIn('face', form.errors)
-        self.assertIn('position', form.errors)
 
-    def test_initial_data_population(self):
-        device_type = DeviceType.objects.first()
-        cluster = Cluster.objects.first()
-        test = DeviceForm(initial={
-            'device_type': device_type.pk,
+    def test_non_racked_device_with_position(self):
+        form = DeviceForm(data={
+            'name': 'New Device',
             'device_role': DeviceRole.objects.first().pk,
-            'status': DeviceStatusChoices.STATUS_ACTIVE,
+            'tenant': None,
+            'manufacturer': Manufacturer.objects.first().pk,
+            'device_type': DeviceType.objects.first().pk,
             'site': Site.objects.first().pk,
-            'cluster': cluster.pk,
+            'rack': None,
+            'position': 10,
+            'platform': None,
+            'status': DeviceStatusChoices.STATUS_ACTIVE,
         })
-
-        # Check that the initial value for the manufacturer is set automatically when assigning the device type
-        self.assertEqual(test.initial['manufacturer'], device_type.manufacturer.pk)
-
-        # Check that the initial value for the cluster group is set automatically when assigning the cluster
-        self.assertEqual(test.initial['cluster_group'], cluster.group.pk)
+        self.assertFalse(form.is_valid())
+        self.assertIn('position', form.errors)
 
 
 class LabelTestCase(TestCase):

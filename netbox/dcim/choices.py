@@ -21,6 +21,14 @@ class SiteStatusChoices(ChoiceSet):
         (STATUS_RETIRED, 'Retired'),
     )
 
+    CSS_CLASSES = {
+        STATUS_PLANNED: 'info',
+        STATUS_STAGING: 'primary',
+        STATUS_ACTIVE: 'success',
+        STATUS_DECOMMISSIONING: 'warning',
+        STATUS_RETIRED: 'danger',
+    }
+
 
 #
 # Racks
@@ -73,6 +81,14 @@ class RackStatusChoices(ChoiceSet):
         (STATUS_ACTIVE, 'Active'),
         (STATUS_DEPRECATED, 'Deprecated'),
     )
+
+    CSS_CLASSES = {
+        STATUS_RESERVED: 'warning',
+        STATUS_AVAILABLE: 'success',
+        STATUS_PLANNED: 'info',
+        STATUS_ACTIVE: 'primary',
+        STATUS_DEPRECATED: 'danger',
+    }
 
 
 class RackDimensionUnitChoices(ChoiceSet):
@@ -146,6 +162,16 @@ class DeviceStatusChoices(ChoiceSet):
         (STATUS_INVENTORY, 'Inventory'),
         (STATUS_DECOMMISSIONING, 'Decommissioning'),
     )
+
+    CSS_CLASSES = {
+        STATUS_OFFLINE: 'warning',
+        STATUS_ACTIVE: 'success',
+        STATUS_PLANNED: 'info',
+        STATUS_STAGED: 'primary',
+        STATUS_FAILED: 'danger',
+        STATUS_INVENTORY: 'default',
+        STATUS_DECOMMISSIONING: 'warning',
+    }
 
 
 #
@@ -278,6 +304,16 @@ class PowerPortTypeChoices(ChoiceSet):
     TYPE_ITA_M = 'ita-m'
     TYPE_ITA_N = 'ita-n'
     TYPE_ITA_O = 'ita-o'
+    # USB
+    TYPE_USB_A = 'usb-a'
+    TYPE_USB_B = 'usb-b'
+    TYPE_USB_C = 'usb-c'
+    TYPE_USB_MINI_A = 'usb-mini-a'
+    TYPE_USB_MINI_B = 'usb-mini-b'
+    TYPE_USB_MICRO_A = 'usb-micro-a'
+    TYPE_USB_MICRO_B = 'usb-micro-b'
+    TYPE_USB_3_B = 'usb-3-b'
+    TYPE_USB_3_MICROB = 'usb-3-micro-b'
 
     CHOICES = (
         ('IEC 60320', (
@@ -366,6 +402,17 @@ class PowerPortTypeChoices(ChoiceSet):
             (TYPE_ITA_M, 'ITA Type M (BS 546)'),
             (TYPE_ITA_N, 'ITA Type N'),
             (TYPE_ITA_O, 'ITA Type O'),
+        )),
+        ('USB', (
+            (TYPE_USB_A, 'USB Type A'),
+            (TYPE_USB_B, 'USB Type B'),
+            (TYPE_USB_C, 'USB Type C'),
+            (TYPE_USB_MINI_A, 'USB Mini A'),
+            (TYPE_USB_MINI_B, 'USB Mini B'),
+            (TYPE_USB_MICRO_A, 'USB Micro A'),
+            (TYPE_USB_MICRO_B, 'USB Micro B'),
+            (TYPE_USB_3_B, 'USB 3.0 Type B'),
+            (TYPE_USB_3_MICROB, 'USB 3.0 Micro B'),
         )),
     )
 
@@ -456,6 +503,10 @@ class PowerOutletTypeChoices(ChoiceSet):
     TYPE_ITA_M = 'ita-m'
     TYPE_ITA_N = 'ita-n'
     TYPE_ITA_O = 'ita-o'
+    # USB
+    TYPE_USB_A = 'usb-a'
+    TYPE_USB_MICROB = 'usb-micro-b'
+    TYPE_USB_C = 'usb-c'
     # Proprietary
     TYPE_HDOT_CX = 'hdot-cx'
 
@@ -546,6 +597,11 @@ class PowerOutletTypeChoices(ChoiceSet):
             (TYPE_ITA_N, 'ITA Type N'),
             (TYPE_ITA_O, 'ITA Type O'),
         )),
+        ('USB', (
+            (TYPE_USB_A, 'USB Type A'),
+            (TYPE_USB_MICROB, 'USB Micro B'),
+            (TYPE_USB_C, 'USB Type C'),
+        )),
         ('Proprietary', (
             (TYPE_HDOT_CX, 'HDOT Cx'),
         )),
@@ -630,6 +686,7 @@ class InterfaceTypeChoices(ChoiceSet):
     TYPE_8GFC_SFP_PLUS = '8gfc-sfpp'
     TYPE_16GFC_SFP_PLUS = '16gfc-sfpp'
     TYPE_32GFC_SFP28 = '32gfc-sfp28'
+    TYPE_64GFC_QSFP_PLUS = '64gfc-qsfpp'
     TYPE_128GFC_QSFP28 = '128gfc-sfp28'
 
     # InfiniBand
@@ -745,6 +802,7 @@ class InterfaceTypeChoices(ChoiceSet):
                 (TYPE_8GFC_SFP_PLUS, 'SFP+ (8GFC)'),
                 (TYPE_16GFC_SFP_PLUS, 'SFP+ (16GFC)'),
                 (TYPE_32GFC_SFP28, 'SFP28 (32GFC)'),
+                (TYPE_64GFC_QSFP_PLUS, 'QSFP+ (64GFC)'),
                 (TYPE_128GFC_QSFP28, 'QSFP28 (128GFC)'),
             )
         ),
@@ -814,6 +872,13 @@ class InterfaceModeChoices(ChoiceSet):
 class PortTypeChoices(ChoiceSet):
 
     TYPE_8P8C = '8p8c'
+    TYPE_8P6C = '8p6c'
+    TYPE_8P4C = '8p4c'
+    TYPE_8P2C = '8p2c'
+    TYPE_GG45 = 'gg45'
+    TYPE_TERA4P = 'tera-4p'
+    TYPE_TERA2P = 'tera-2p'
+    TYPE_TERA1P = 'tera-1p'
     TYPE_110_PUNCH = '110-punch'
     TYPE_BNC = 'bnc'
     TYPE_MRJ21 = 'mrj21'
@@ -827,12 +892,22 @@ class PortTypeChoices(ChoiceSet):
     TYPE_MPO = 'mpo'
     TYPE_LSH = 'lsh'
     TYPE_LSH_APC = 'lsh-apc'
+    TYPE_SPLICE = 'splice'
+    TYPE_CS = 'cs'
+    TYPE_SN = 'sn'
 
     CHOICES = (
         (
             'Copper',
             (
                 (TYPE_8P8C, '8P8C'),
+                (TYPE_8P6C, '8P6C'),
+                (TYPE_8P4C, '8P4C'),
+                (TYPE_8P2C, '8P2C'),
+                (TYPE_GG45, 'GG45'),
+                (TYPE_TERA4P, 'TERA 4P'),
+                (TYPE_TERA2P, 'TERA 2P'),
+                (TYPE_TERA1P, 'TERA 1P'),
                 (TYPE_110_PUNCH, '110 Punch'),
                 (TYPE_BNC, 'BNC'),
                 (TYPE_MRJ21, 'MRJ21'),
@@ -851,6 +926,9 @@ class PortTypeChoices(ChoiceSet):
                 (TYPE_SC, 'SC'),
                 (TYPE_SC_APC, 'SC/APC'),
                 (TYPE_ST, 'ST'),
+                (TYPE_CS, 'CS'),
+                (TYPE_SN, 'SN'),
+                (TYPE_SPLICE, 'Splice'),
             )
         )
     )
@@ -868,6 +946,8 @@ class CableTypeChoices(ChoiceSet):
     TYPE_CAT6 = 'cat6'
     TYPE_CAT6A = 'cat6a'
     TYPE_CAT7 = 'cat7'
+    TYPE_CAT7A = 'cat7a'
+    TYPE_CAT8 = 'cat8'
     TYPE_DAC_ACTIVE = 'dac-active'
     TYPE_DAC_PASSIVE = 'dac-passive'
     TYPE_MRJ21_TRUNK = 'mrj21-trunk'
@@ -892,6 +972,8 @@ class CableTypeChoices(ChoiceSet):
                 (TYPE_CAT6, 'CAT6'),
                 (TYPE_CAT6A, 'CAT6a'),
                 (TYPE_CAT7, 'CAT7'),
+                (TYPE_CAT7A, 'CAT7a'),
+                (TYPE_CAT8, 'CAT8'),
                 (TYPE_DAC_ACTIVE, 'Direct Attach Copper (Active)'),
                 (TYPE_DAC_PASSIVE, 'Direct Attach Copper (Passive)'),
                 (TYPE_MRJ21_TRUNK, 'MRJ21 Trunk'),
@@ -927,6 +1009,12 @@ class CableStatusChoices(ChoiceSet):
         (STATUS_DECOMMISSIONING, 'Decommissioning'),
     )
 
+    CSS_CLASSES = {
+        STATUS_CONNECTED: 'success',
+        STATUS_PLANNED: 'info',
+        STATUS_DECOMMISSIONING: 'warning',
+    }
+
 
 class CableLengthUnitChoices(ChoiceSet):
 
@@ -961,6 +1049,13 @@ class PowerFeedStatusChoices(ChoiceSet):
         (STATUS_FAILED, 'Failed'),
     )
 
+    CSS_CLASSES = {
+        STATUS_OFFLINE: 'warning',
+        STATUS_ACTIVE: 'success',
+        STATUS_PLANNED: 'info',
+        STATUS_FAILED: 'danger',
+    }
+
 
 class PowerFeedTypeChoices(ChoiceSet):
 
@@ -971,6 +1066,11 @@ class PowerFeedTypeChoices(ChoiceSet):
         (TYPE_PRIMARY, 'Primary'),
         (TYPE_REDUNDANT, 'Redundant'),
     )
+
+    CSS_CLASSES = {
+        TYPE_PRIMARY: 'success',
+        TYPE_REDUNDANT: 'info',
+    }
 
 
 class PowerFeedSupplyChoices(ChoiceSet):

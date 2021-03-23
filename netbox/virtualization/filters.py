@@ -2,7 +2,7 @@ import django_filters
 from django.db.models import Q
 
 from dcim.models import DeviceRole, Platform, Region, Site
-from extras.filters import CustomFieldFilterSet, CreatedUpdatedFilterSet, LocalConfigContextFilterSet
+from extras.filters import CustomFieldModelFilterSet, CreatedUpdatedFilterSet, LocalConfigContextFilterSet
 from tenancy.filters import TenancyFilterSet
 from utilities.filters import (
     BaseFilterSet, MultiValueMACAddressFilter, NameSlugSearchFilterSet, TagFilter,
@@ -34,7 +34,7 @@ class ClusterGroupFilterSet(BaseFilterSet, NameSlugSearchFilterSet):
         fields = ['id', 'name', 'slug', 'description']
 
 
-class ClusterFilterSet(BaseFilterSet, TenancyFilterSet, CustomFieldFilterSet, CreatedUpdatedFilterSet):
+class ClusterFilterSet(BaseFilterSet, TenancyFilterSet, CustomFieldModelFilterSet, CreatedUpdatedFilterSet):
     q = django_filters.CharFilter(
         method='search',
         label='Search',
@@ -101,7 +101,7 @@ class VirtualMachineFilterSet(
     BaseFilterSet,
     LocalConfigContextFilterSet,
     TenancyFilterSet,
-    CustomFieldFilterSet,
+    CustomFieldModelFilterSet,
     CreatedUpdatedFilterSet
 ):
     q = django_filters.CharFilter(
@@ -186,6 +186,10 @@ class VirtualMachineFilterSet(
         field_name='interfaces__mac_address',
         label='MAC address',
     )
+    has_primary_ip = django_filters.BooleanFilter(
+        method='_has_primary_ip',
+        label='Has a primary IP',
+    )
     tag = TagFilter()
 
     class Meta:
@@ -199,6 +203,12 @@ class VirtualMachineFilterSet(
             Q(name__icontains=value) |
             Q(comments__icontains=value)
         )
+
+    def _has_primary_ip(self, queryset, name, value):
+        params = Q(primary_ip4__isnull=False) | Q(primary_ip6__isnull=False)
+        if value:
+            return queryset.filter(params)
+        return queryset.exclude(params)
 
 
 class VMInterfaceFilterSet(BaseFilterSet):

@@ -8,7 +8,6 @@ from django.contrib.contenttypes.models import ContentType
 from django.core.validators import ValidationError
 from django.db import models
 from django.http import HttpResponse
-from django.template import Template, Context
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework.utils.encoders import JSONEncoder
@@ -32,7 +31,7 @@ class Webhook(models.Model):
     delete in NetBox. The request will contain a representation of the object, which the remote application can act on.
     Each Webhook can be limited to firing only on certain actions or certain object types.
     """
-    obj_type = models.ManyToManyField(
+    content_types = models.ManyToManyField(
         to=ContentType,
         related_name='webhooks',
         verbose_name='Object types',
@@ -118,11 +117,15 @@ class Webhook(models.Model):
         return self.name
 
     def clean(self):
+        super().clean()
+
+        # At least one action type must be selected
         if not self.type_create and not self.type_delete and not self.type_update:
             raise ValidationError(
                 "You must select at least one type: create, update, and/or delete."
             )
 
+        # CA file path requires SSL verification enabled
         if not self.ssl_verification and self.ca_file_path:
             raise ValidationError({
                 'ca_file_path': 'Do not specify a CA certificate file if SSL verification is disabled.'
@@ -204,69 +207,6 @@ class CustomLink(models.Model):
 
 
 #
-# Graphs
-#
-
-class Graph(models.Model):
-    type = models.ForeignKey(
-        to=ContentType,
-        on_delete=models.CASCADE,
-        limit_choices_to=FeatureQuery('graphs')
-    )
-    weight = models.PositiveSmallIntegerField(
-        default=1000
-    )
-    name = models.CharField(
-        max_length=100,
-        verbose_name='Name'
-    )
-    template_language = models.CharField(
-        max_length=50,
-        choices=TemplateLanguageChoices,
-        default=TemplateLanguageChoices.LANGUAGE_JINJA2
-    )
-    source = models.CharField(
-        max_length=500,
-        verbose_name='Source URL'
-    )
-    link = models.URLField(
-        blank=True,
-        verbose_name='Link URL'
-    )
-
-    objects = RestrictedQuerySet.as_manager()
-
-    class Meta:
-        ordering = ('type', 'weight', 'name', 'pk')  # (type, weight, name) may be non-unique
-
-    def __str__(self):
-        return self.name
-
-    def embed_url(self, obj):
-        context = {'obj': obj}
-
-        if self.template_language == TemplateLanguageChoices.LANGUAGE_DJANGO:
-            template = Template(self.source)
-            return template.render(Context(context))
-
-        elif self.template_language == TemplateLanguageChoices.LANGUAGE_JINJA2:
-            return render_jinja2(self.source, context)
-
-    def embed_link(self, obj):
-        if self.link is None:
-            return ''
-
-        context = {'obj': obj}
-
-        if self.template_language == TemplateLanguageChoices.LANGUAGE_DJANGO:
-            template = Template(self.link)
-            return template.render(Context(context))
-
-        elif self.template_language == TemplateLanguageChoices.LANGUAGE_JINJA2:
-            return render_jinja2(self.link, context)
-
-
-#
 # Export templates
 #
 
@@ -282,11 +222,6 @@ class ExportTemplate(models.Model):
     description = models.CharField(
         max_length=200,
         blank=True
-    )
-    template_language = models.CharField(
-        max_length=50,
-        choices=TemplateLanguageChoices,
-        default=TemplateLanguageChoices.LANGUAGE_JINJA2
     )
     template_code = models.TextField(
         help_text='The list of objects being exported is passed as a context variable named <code>queryset</code>.'
@@ -321,16 +256,7 @@ class ExportTemplate(models.Model):
         context = {
             'queryset': queryset
         }
-
-        if self.template_language == TemplateLanguageChoices.LANGUAGE_DJANGO:
-            template = Template(self.template_code)
-            output = template.render(Context(context))
-
-        elif self.template_language == TemplateLanguageChoices.LANGUAGE_JINJA2:
-            output = render_jinja2(self.template_code, context)
-
-        else:
-            return None
+        output = render_jinja2(self.template_code, context)
 
         # Replace CRLF-style line terminators
         output = output.replace('\r\n', '\n')
@@ -514,6 +440,7 @@ class ConfigContext(ChangeLoggedModel):
         return reverse('extras:configcontext', kwargs={'pk': self.pk})
 
     def clean(self):
+        super().clean()
 
         # Verify that JSON data is provided as an object
         if type(self.data) is not dict:
@@ -542,8 +469,16 @@ class ConfigContextModel(models.Model):
 
         # Compile all config data, overwriting lower-weight values with higher-weight values where a collision occurs
         data = OrderedDict()
-        for context in ConfigContext.objects.get_for_object(self):
-            data = deepmerge(data, context.data)
+
+        if not hasattr(self, 'config_context_data'):
+            # The annotation is not available, so we fall back to manually querying for the config context objects
+            config_context_data = ConfigContext.objects.get_for_object(self, aggregate_data=True)
+        else:
+            # The attribute may exist, but the annotated value could be None if there is no config context data
+            config_context_data = self.config_context_data or []
+
+        for context in config_context_data:
+            data = deepmerge(data, context)
 
         # If the object has local config context data defined, merge it last
         if self.local_context_data:
@@ -552,7 +487,6 @@ class ConfigContextModel(models.Model):
         return data
 
     def clean(self):
-
         super().clean()
 
         # Verify that JSON data is provided as an object

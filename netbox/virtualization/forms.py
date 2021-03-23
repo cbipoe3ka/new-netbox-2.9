@@ -4,7 +4,7 @@ from django.core.exceptions import ValidationError
 
 from dcim.choices import InterfaceModeChoices
 from dcim.constants import INTERFACE_MTU_MAX, INTERFACE_MTU_MIN
-from dcim.forms import INTERFACE_MODE_HELP_TEXT
+from dcim.forms import InterfaceCommonForm, INTERFACE_MODE_HELP_TEXT
 from dcim.models import Device, DeviceRole, Platform, Rack, Region, Site
 from extras.forms import (
     AddRemoveTagsForm, CustomFieldBulkEditForm, CustomFieldModelCSVForm, CustomFieldModelForm, CustomFieldFilterForm,
@@ -79,9 +79,19 @@ class ClusterForm(BootstrapMixin, TenancyForm, CustomFieldModelForm):
         queryset=ClusterGroup.objects.all(),
         required=False
     )
+    region = DynamicModelChoiceField(
+        queryset=Region.objects.all(),
+        required=False,
+        initial_params={
+            'sites': '$site'
+        }
+    )
     site = DynamicModelChoiceField(
         queryset=Site.objects.all(),
-        required=False
+        required=False,
+        query_params={
+            'region_id': '$region'
+        }
     )
     comments = CommentField()
     tags = DynamicModelMultipleChoiceField(
@@ -92,7 +102,7 @@ class ClusterForm(BootstrapMixin, TenancyForm, CustomFieldModelForm):
     class Meta:
         model = Cluster
         fields = (
-            'name', 'type', 'group', 'tenant', 'site', 'comments', 'tags',
+            'name', 'type', 'group', 'tenant', 'region', 'site', 'comments', 'tags',
         )
 
 
@@ -143,9 +153,17 @@ class ClusterBulkEditForm(BootstrapMixin, AddRemoveTagsForm, CustomFieldBulkEdit
         queryset=Tenant.objects.all(),
         required=False
     )
+    region = DynamicModelChoiceField(
+        queryset=Region.objects.all(),
+        required=False,
+        to_field_name='slug'
+    )
     site = DynamicModelChoiceField(
         queryset=Site.objects.all(),
-        required=False
+        required=False,
+        query_params={
+            'region': '$region'
+        }
     )
     comments = CommentField(
         widget=SmallTextarea,
@@ -266,7 +284,10 @@ class VirtualMachineForm(BootstrapMixin, TenancyForm, CustomFieldModelForm):
     cluster_group = DynamicModelChoiceField(
         queryset=ClusterGroup.objects.all(),
         required=False,
-        null_option='None'
+        null_option='None',
+        initial_params={
+            'clusters': '$cluster'
+        }
     )
     cluster = DynamicModelChoiceField(
         queryset=Cluster.objects.all(),
@@ -311,14 +332,6 @@ class VirtualMachineForm(BootstrapMixin, TenancyForm, CustomFieldModelForm):
         }
 
     def __init__(self, *args, **kwargs):
-
-        # Initialize helper selector
-        instance = kwargs.get('instance')
-        if instance.pk and instance.cluster is not None:
-            initial = kwargs.get('initial', {}).copy()
-            initial['cluster_group'] = instance.cluster.group
-            kwargs['initial'] = initial
-
         super().__init__(*args, **kwargs)
 
         if self.instance.pk:
@@ -516,6 +529,13 @@ class VirtualMachineFilterForm(BootstrapMixin, TenancyFilterForm, CustomFieldFil
         required=False,
         label='MAC address'
     )
+    has_primary_ip = forms.NullBooleanField(
+        required=False,
+        label='Has a primary IP',
+        widget=StaticSelect2(
+            choices=BOOLEAN_WITH_BLANK_CHOICES
+        )
+    )
     tag = TagFilterField(model)
 
 
@@ -523,10 +543,11 @@ class VirtualMachineFilterForm(BootstrapMixin, TenancyFilterForm, CustomFieldFil
 # VM interfaces
 #
 
-class VMInterfaceForm(BootstrapMixin, forms.ModelForm):
+class VMInterfaceForm(BootstrapMixin, InterfaceCommonForm, forms.ModelForm):
     untagged_vlan = DynamicModelChoiceField(
         queryset=VLAN.objects.all(),
         required=False,
+        label='Untagged VLAN',
         display_field='display_name',
         brief_mode=False,
         query_params={
@@ -536,6 +557,7 @@ class VMInterfaceForm(BootstrapMixin, forms.ModelForm):
     tagged_vlans = DynamicModelMultipleChoiceField(
         queryset=VLAN.objects.all(),
         required=False,
+        label='Tagged VLANs',
         display_field='display_name',
         brief_mode=False,
         query_params={
@@ -577,24 +599,8 @@ class VMInterfaceForm(BootstrapMixin, forms.ModelForm):
             self.fields['untagged_vlan'].widget.add_query_param('site_id', site.pk)
             self.fields['tagged_vlans'].widget.add_query_param('site_id', site.pk)
 
-    def clean(self):
-        super().clean()
 
-        # Validate VLAN assignments
-        tagged_vlans = self.cleaned_data['tagged_vlans']
-
-        # Untagged interfaces cannot be assigned tagged VLANs
-        if self.cleaned_data['mode'] == InterfaceModeChoices.MODE_ACCESS and tagged_vlans:
-            raise forms.ValidationError({
-                'mode': "An access interface cannot have tagged VLANs assigned."
-            })
-
-        # Remove all tagged VLAN assignments from "tagged all" interfaces
-        elif self.cleaned_data['mode'] == InterfaceModeChoices.MODE_TAGGED_ALL:
-            self.cleaned_data['tagged_vlans'] = []
-
-
-class VMInterfaceCreateForm(BootstrapMixin, forms.Form):
+class VMInterfaceCreateForm(BootstrapMixin, InterfaceCommonForm):
     virtual_machine = DynamicModelChoiceField(
         queryset=VirtualMachine.objects.all()
     )
