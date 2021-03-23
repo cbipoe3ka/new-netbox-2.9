@@ -4,11 +4,12 @@ NetBox is maintained as a [GitHub project](https://github.com/netbox-community/n
 
 ## Communication
 
-Communication among developers should always occur via public channels:
+There are several official forums for communication among the developers and community members:
 
 * [GitHub issues](https://github.com/netbox-community/netbox/issues) - All feature requests, bug reports, and other substantial changes to the code base **must** be documented in an issue.
-* [The mailing list](https://groups.google.com/forum/#!forum/netbox-discuss) - The preferred forum for general discussion and support issues. Ideal for shaping a feature request prior to submitting an issue.
-* [#netbox on NetworkToCode](http://slack.networktocode.com/) - Good for quick chats. Avoid any discussion that might need to be referenced later on, as the chat history is not retained long.
+* [GitHub Discussions](https://github.com/netbox-community/netbox/discussions) - The preferred forum for general discussion and support issues. Ideal for shaping a feature request prior to submitting an issue.
+* [#netbox on NetDev Community Slack](https://slack.netbox.dev/) - Good for quick chats. Avoid any discussion that might need to be referenced later on, as the chat history is not retained long.
+* [Google Group](https://groups.google.com/g/netbox-discuss) - Legacy mailing list; slowly being phased out in favor of GitHub discussions.
 
 ## Governance
 
@@ -18,7 +19,7 @@ NetBox follows the [benevolent dictator](http://oss-watch.ac.uk/resources/benevo
 
 All development of the current NetBox release occurs in the `develop` branch; releases are packaged from the `master` branch. The `master` branch should _always_ represent the current stable release in its entirety, such that installing NetBox by either downloading a packaged release or cloning the `master` branch provides the same code base.
 
-NetBox components are arranged into functional subsections called _apps_ (a carryover from Django verancular). Each app holds the models, views, and templates relevant to a particular function:
+NetBox components are arranged into functional subsections called _apps_ (a carryover from Django vernacular). Each app holds the models, views, and templates relevant to a particular function:
 
 * `circuits`: Communications circuits and providers (not to be confused with power circuits)
 * `dcim`: Datacenter infrastructure management (sites, racks, and devices)
@@ -26,5 +27,6 @@ NetBox components are arranged into functional subsections called _apps_ (a carr
 * `ipam`: IP address management (VRFs, prefixes, IP addresses, and VLANs)
 * `secrets`: Encrypted storage of sensitive data (e.g. login credentials)
 * `tenancy`: Tenants (such as customers) to which NetBox objects may be assigned
+* `users`: Authentication and user preferences
 * `utilities`: Resources which are not user-facing (extendable classes, etc.)
 * `virtualization`: Virtual machines and clusters

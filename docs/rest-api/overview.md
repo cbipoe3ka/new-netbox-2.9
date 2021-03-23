@@ -2,7 +2,7 @@
 
 ## What is a REST API?
 
-REST stands for [representational state transfer](https://en.wikipedia.org/wiki/Representational_state_transfer). It's a particular type of API which employs HTTP requests and [JavaScript Object Notation (JSON)](http://www.json.org/) to facilitate create, retrieve, update, and delete (CRUD) operations on objects within an application. Each type of operation is associated with a particular HTTP verb:
+REST stands for [representational state transfer](https://en.wikipedia.org/wiki/Representational_state_transfer). It's a particular type of API which employs HTTP requests and [JavaScript Object Notation (JSON)](https://www.json.org/) to facilitate create, retrieve, update, and delete (CRUD) operations on objects within an application. Each type of operation is associated with a particular HTTP verb:
 
 * `GET`: Retrieve an object or list of objects
 * `POST`: Create an object
@@ -269,7 +269,7 @@ The brief format is supported for both lists and individual objects.
 
 ### Excluding Config Contexts
 
-When retrieving devices and virtual machines via the REST API, each will included its rendered [configuration context data](../models/extras/configcontext/) by default. Users with large amounts of context data will likely observe suboptimal performance when returning multiple objects, particularly with very high page sizes. To combat this, context data may be excluded from the response data by attaching the query parameter `?exclude=config_context` to the request. This parameter works for both list and detail views.
+When retrieving devices and virtual machines via the REST API, each will included its rendered [configuration context data](../models/extras/configcontext.md) by default. Users with large amounts of context data will likely observe suboptimal performance when returning multiple objects, particularly with very high page sizes. To combat this, context data may be excluded from the response data by attaching the query parameter `?exclude=config_context` to the request. This parameter works for both list and detail views.
 
 ## Pagination
 
@@ -308,7 +308,7 @@ Vary: Accept
 }
 ```
 
-The default page is determined by the [`PAGINATE_COUNT`](../../configuration/optional-settings/#paginate_count) configuration parameter, which defaults to 50. However, this can be overridden per request by specifying the desired `offset` and `limit` query parameters. For example, if you wish to retrieve a hundred devices at a time, you would make a request for:
+The default page is determined by the [`PAGINATE_COUNT`](../configuration/optional-settings.md#paginate_count) configuration parameter, which defaults to 50. However, this can be overridden per request by specifying the desired `offset` and `limit` query parameters. For example, if you wish to retrieve a hundred devices at a time, you would make a request for:
 
 ```
 http://netbox/api/dcim/devices/?limit=100
@@ -325,7 +325,7 @@ The response will return devices 1 through 100. The URL provided in the `next` a
 }
 ```
 
-The maximum number of objects that can be returned is limited by the [`MAX_PAGE_SIZE`](../../configuration/optional-settings/#max_page_size) configuration parameter, which is 1000 by default. Setting this to `0` or `None` will remove the maximum limit. An API consumer can then pass `?limit=0` to retrieve _all_ matching objects with a single request.
+The maximum number of objects that can be returned is limited by the [`MAX_PAGE_SIZE`](../configuration/optional-settings.md#max_page_size) configuration parameter, which is 1000 by default. Setting this to `0` or `None` will remove the maximum limit. An API consumer can then pass `?limit=0` to retrieve _all_ matching objects with a single request.
 
 !!! warning
     Disabling the page size limit introduces a potential for very resource-intensive requests, since one API request can effectively retrieve an entire table from the database.
@@ -387,7 +387,7 @@ curl -s -X GET http://netbox/api/ipam/ip-addresses/5618/ | jq '.'
 
 ### Creating a New Object
 
-To create a new object, make a `POST` request to the model's _list_ endpoint with JSON data pertaining to the object being created. Note that a REST API token is required for all write operations; see the [authentication documentation](../authentication/) for more information. Also be sure to set the `Content-Type` HTTP header to `application/json`.
+To create a new object, make a `POST` request to the model's _list_ endpoint with JSON data pertaining to the object being created. Note that a REST API token is required for all write operations; see the [authentication documentation](../authentication/index.md) for more information. Also be sure to set the `Content-Type` HTTP header to `application/json`.
 
 ```no-highlight
 curl -s -X POST \
@@ -468,16 +468,16 @@ http://netbox/api/dcim/sites/ \
 ]
 ```
 
-### Modifying an Object
+### Updating an Object
 
 To modify an object which has already been created, make a `PATCH` request to the model's _detail_ endpoint specifying its unique numeric ID. Include any data which you wish to update on the object. As with object creation, the `Authorization` and `Content-Type` headers must also be specified.
 
 ```no-highlight
 curl -s -X PATCH \
-> -H "Authorization: Token $TOKEN" \
-> -H "Content-Type: application/json" \
-> http://netbox/api/ipam/prefixes/18691/ \
-> --data '{"status": "reserved"}' | jq '.'
+-H "Authorization: Token $TOKEN" \
+-H "Content-Type: application/json" \
+http://netbox/api/ipam/prefixes/18691/ \
+--data '{"status": "reserved"}' | jq '.'
 ```
 
 ```json
@@ -515,6 +515,23 @@ curl -s -X PATCH \
 !!! note "PUT versus PATCH"
     The NetBox REST API support the use of either `PUT` or `PATCH` to modify an existing object. The difference is that a `PUT` request requires the user to specify a _complete_ representation of the object being modified, whereas a `PATCH` request need include only the attributes that are being updated. For most purposes, using `PATCH` is recommended.
 
+### Updating Multiple Objects
+
+Multiple objects can be updated simultaneously by issuing a `PUT` or `PATCH` request to a model's list endpoint with a list of dictionaries specifying the numeric ID of each object to be deleted and the attributes to be updated. For example, to update sites with IDs 10 and 11 to a status of "active", issue the following request:
+
+```no-highlight
+curl -s -X PATCH \
+-H "Authorization: Token $TOKEN" \
+-H "Content-Type: application/json" \
+http://netbox/api/dcim/sites/ \
+--data '[{"id": 10, "status": "active"}, {"id": 11, "status": "active"}]'
+```
+
+Note that there is no requirement for the attributes to be identical among objects. For instance, it's possible to update the status of one site along with the name of another in the same request.
+
+!!! note
+    The bulk update of objects is an all-or-none operation, meaning that if NetBox fails to successfully update any of the specified objects (e.g. due a validation error), the entire operation will be aborted and none of the objects will be updated.
+
 ### Deleting an Object
 
 To delete an object from NetBox, make a `DELETE` request to the model's _detail_ endpoint specifying its unique numeric ID. The `Authorization` header must be included to specify an authorization token, however this type of request does not support passing any data in the body.
@@ -529,3 +546,18 @@ Note that `DELETE` requests do not return any data: If successful, the API will 
 
 !!! note
     You can run `curl` with the verbose (`-v`) flag to inspect the HTTP response codes.
+
+### Deleting Multiple Objects
+
+NetBox supports the simultaneous deletion of multiple objects of the same type by issuing a `DELETE` request to the model's list endpoint with a list of dictionaries specifying the numeric ID of each object to be deleted. For example, to delete sites with IDs 10, 11, and 12, issue the following request:
+
+```no-highlight
+curl -s -X DELETE \
+-H "Authorization: Token $TOKEN" \
+-H "Content-Type: application/json" \
+http://netbox/api/dcim/sites/ \
+--data '[{"id": 10}, {"id": 11}, {"id": 12}]'
+```
+
+!!! note
+    The bulk deletion of objects is an all-or-none operation, meaning that if NetBox fails to delete any of the specified objects (e.g. due a dependency by a related object), the entire operation will be aborted and none of the objects will be deleted.

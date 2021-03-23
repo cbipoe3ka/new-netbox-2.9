@@ -12,7 +12,7 @@ A NetBox report is a mechanism for validating the integrity of data within NetBo
 
 ## Writing Reports
 
-Reports must be saved as files in the [`REPORTS_ROOT`](../../configuration/optional-settings/#reports_root) path (which defaults to `netbox/reports/`). Each file created within this path is considered a separate module. Each module holds one or more reports (Python classes), each of which performs a certain function. The logic of each report is broken into discrete test methods, each of which applies a small portion of the logic comprising the overall test.
+Reports must be saved as files in the [`REPORTS_ROOT`](../configuration/optional-settings.md#reports_root) path (which defaults to `netbox/reports/`). Each file created within this path is considered a separate module. Each module holds one or more reports (Python classes), each of which performs a certain function. The logic of each report is broken into discrete test methods, each of which applies a small portion of the logic comprising the overall test.
 
 !!! warning
     The reports path includes a file named `__init__.py`, which registers the path as a Python module. Do not delete this file.
@@ -66,7 +66,7 @@ class DeviceConnectionsReport(Report):
             for power_port in PowerPort.objects.filter(device=device):
                 if power_port.connected_endpoint is not None:
                     connected_ports += 1
-                    if not power_port.connection_status:
+                    if not power_port.path.is_active:
                         self.log_warning(
                             device,
                             "Power connection for {} marked as planned".format(power_port.name)
@@ -101,11 +101,14 @@ Once you have created a report, it will appear in the reports list. Initially, r
 
 ## Running Reports
 
+!!! note
+    To run a report, a user must be assigned the `extras.run_report` permission. This is achieved by assigning the user (or group) a permission on the Report object and specifying the `run` action in the admin UI as shown below.
+
+    ![Adding the run action to a permission](../../media/admin_ui_run_permission.png)
+
 ### Via the Web UI
 
-Reports can be run via the web UI by navigating to the report and clicking the "run report" button at top right. Note that a user must have permission to create ReportResults in order to run reports. (Permissions can be assigned through the admin UI.)
-
-Once a report has been run, its associated results will be included in the report view.
+Reports can be run via the web UI by navigating to the report and clicking the "run report" button at top right. Once a report has been run, its associated results will be included in the report view.
 
 ### Via the API
 

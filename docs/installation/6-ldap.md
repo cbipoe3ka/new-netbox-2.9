@@ -9,13 +9,13 @@ This guide explains how to implement LDAP authentication using an external serve
 On Ubuntu:
 
 ```no-highlight
-# apt-get install -y libldap2-dev libsasl2-dev libssl-dev
+sudo apt install -y libldap2-dev libsasl2-dev libssl-dev
 ```
 
 On CentOS:
 
 ```no-highlight
-# yum install -y openldap-devel
+sudo yum install -y openldap-devel
 ```
 
 ### Install django-auth-ldap
@@ -23,15 +23,14 @@ On CentOS:
 Activate the Python virtual environment and install the `django-auth-ldap` package using pip:
 
 ```no-highlight
-# cd /opt/netbox/
-# source venv/bin/activate
-(venv) # pip3 install django-auth-ldap
+source /opt/netbox/venv/bin/activate
+pip3 install django-auth-ldap
 ```
 
 Once installed, add the package to `local_requirements.txt` to ensure it is re-installed during future rebuilds of the virtual environment:
 
 ```no-highlight
-(venv) # echo django-auth-ldap >> local_requirements.txt
+sudo echo django-auth-ldap >> /opt/netbox/local_requirements.txt
 ```
 
 ## Configuration
@@ -42,7 +41,7 @@ First, enable the LDAP authentication backend in `configuration.py`. (Be sure to
 REMOTE_AUTH_BACKEND = 'netbox.authentication.LDAPBackend'
 ```
 
-Next, create a file in the same directory as `configuration.py` (typically `netbox/netbox/`) named `ldap_config.py`. Define all of the parameters required below in `ldap_config.py`. Complete documentation of all `django-auth-ldap` configuration options is included in the project's [official documentation](http://django-auth-ldap.readthedocs.io/).
+Next, create a file in the same directory as `configuration.py` (typically `/opt/netbox/netbox/netbox/`) named `ldap_config.py`. Define all of the parameters required below in `ldap_config.py`. Complete documentation of all `django-auth-ldap` configuration options is included in the project's [official documentation](https://django-auth-ldap.readthedocs.io/).
 
 ### General Server Configuration
 
@@ -141,19 +140,30 @@ AUTH_LDAP_CACHE_TIMEOUT = 3600
 
 ## Troubleshooting LDAP
 
-`systemctl restart netbox` restarts the Netbox service, and initiates any changes made to `ldap_config.py`. If there are syntax errors present, the NetBox process will not spawn an instance, and errors should be logged to `/var/log/messages`.
+`systemctl restart netbox` restarts the NetBox service, and initiates any changes made to `ldap_config.py`. If there are syntax errors present, the NetBox process will not spawn an instance, and errors should be logged to `/var/log/messages`.
 
-For troubleshooting LDAP user/group queries, add the following lines to the start of `ldap_config.py` after `import ldap`.
+For troubleshooting LDAP user/group queries, add or merge the following [logging](../configuration/optional-settings.md#logging) configuration to `configuration.py`:
 
 ```python
-import logging, logging.handlers
-logfile = "/opt/netbox/logs/django-ldap-debug.log"
-my_logger = logging.getLogger('django_auth_ldap')
-my_logger.setLevel(logging.DEBUG)
-handler = logging.handlers.RotatingFileHandler(
-    logfile, maxBytes=1024 * 500, backupCount=5
-)
-my_logger.addHandler(handler)
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'netbox_auth_log': {
+            'level': 'DEBUG',
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': '/opt/netbox/logs/django-ldap-debug.log',
+            'maxBytes': 1024 * 500,
+            'backupCount': 5,
+        },
+    },
+    'loggers': {
+        'django_auth_ldap': {
+            'handlers': ['netbox_auth_log'],
+            'level': 'DEBUG',
+        },
+    },
+}
 ```
 
 Ensure the file and path specified in logfile exist and are writable and executable by the application service account. Restart the netbox service and attempt to log into the site to trigger log entries to this file.
